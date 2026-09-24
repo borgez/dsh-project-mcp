@@ -1,0 +1,105 @@
+{
+  "name": "dsh-project-mcp",
+  "description": "Per-project MCP servers for DeepSeek Harness: mounts the MCP servers a project declares into the sessions working in it",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borgez/dsh-project-mcp.git"
+  },
+  "homepage": "https://github.com/borgez/dsh-project-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/borgez/dsh-project-mcp/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "mcp",
+    "model-context-protocol",
+    "cordis",
+    "plugin"
+  ],
+  "files": [
+    "lib",
+    "src",
+    "locale",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsdown && node scripts/wrap-client.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "e2e": "node scripts/e2e-boot.mjs",
+    "check": "tsc -p tsconfig.json && tsdown && node scripts/wrap-client.mjs && vitest run --coverage && node scripts/audit.mjs",
+    "smoke": "node scripts/live-smoke.mjs",
+    "design:parity": "node scripts/design-parity.mjs",
+    "test:bun": "bun test tests",
+    "smoke:bun": "bun scripts/live-smoke.mjs",
+    "audit": "node scripts/audit.mjs",
+    "audit:bun": "bun scripts/audit.mjs",
+    "check:config": "node scripts/check-config.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.2",
+    "@deepseek-ai/dsh-mcp-client": ">=0.1.5-rc.2",
+    "@deepseek-ai/dsh-scope": ">=0.1.5-rc.2",
+    "dsh-better-sidebar": ">=0.19.0",
+    "react": ">=18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-mcp-client": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-scope": "0.1.5-rc.2",
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.3.31",
+    "@vitest/coverage-v8": "^5.0.1",
+    "@vitest/ui": "5.0.1",
+    "dsh-better-sidebar": "^0.19.1",
+    "react": "^18.3.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1",
+    "@deepseek-ai/dsh-tools": "0.1.5-rc.2"
+  }
+}

@@ -1,0 +1,7 @@
+# Mount the per-project MCP manager on the profile host plane. It resolves the
+# project of every live session and mounts that project's MCP servers on the
+# session's own Cordis scope, so `.kimi-code/mcp.json` / `.dsh/mcp.json` apply
+# only where they are declared.
+- insert:
+    - id: project-mcp
+      name: dsh-project-mcp

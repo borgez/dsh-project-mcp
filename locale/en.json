@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Project MCP",
+    "description": "MCP servers each project declares, mounted only for sessions working in it"
+  }
+}

@@ -1,0 +1,2353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-project-mcp — the interface 1:1 with the harness</title>
+<!--
+  One self-contained file: the plugin's interface inside the harness shell.
+
+  This is a **design** of the interface, not a snapshot of the product: the tab's blocks
+  are brought to one scheme (one number per block, no repeated counter, summary or name),
+  the "Toasts" section is removed, and the typography and class vocabulary are shared by
+  all surfaces. The product still prints the old, duplicated strings — the divergence is
+  listed in the "Differences and boundaries" section, and closing it is the next step of
+  work, not a defect of this file.
+
+  * Tokens are copied **verbatim** from the harness checkout:
+      packages/client/ui-theme/src/styles/design-platform.css
+      packages/client/ui-theme/src/styles/base.css
+      packages/client/ui-theme/src/styles/gradient-shadow-text.css
+  * The shell chrome is an approximation: the shell's class names are hashed by the build,
+    the shell components live outside this repository. Sizes and tokens of the key
+    elements are taken from their CSS.
+  * `--dsw-font-mono` does not exist in the harness: `var(--dsw-font-mono, ui-monospace, monospace)`
+    always resolves to the fallback, and the variable is deliberately not declared here.
+-->
+<style>
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   1. TOKENS — verbatim from design-platform.css (lines 4–346)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Figma font-weight 510 (an SF Pro variable-font weight) always renders as
+   font-weight: 500 in this UI — non-variable webfonts snap intermediate
+   weights unpredictably across platforms. */
+body {
+  --dsw-static-amber-100: rgb(254, 245, 231);
+  --dsw-static-amber-400: rgb(247, 173, 49);
+  --dsw-static-amber-500: rgb(245, 158, 11);
+  --dsw-static-amber-600: rgb(221, 134, 41);
+  --dsw-static-amber-900: rgb(39, 36, 31);
+  --dsw-static-blue-100: rgb(219, 234, 254);
+  --dsw-static-blue-300: rgb(147, 197, 253);
+  --dsw-static-blue-400: rgb(96, 165, 250);
+  --dsw-static-blue-450: rgb(77, 147, 248);
+  --dsw-static-blue-500: rgb(59, 130, 246);
+  --dsw-static-blue-50: rgb(239, 246, 255);
+  --dsw-static-blue-50p: rgb(234, 243, 255);
+  --dsw-static-blue-600: rgb(37, 99, 235);
+  --dsw-static-blue-75: rgb(229, 240, 255);
+  --dsw-static-blue-800: rgb(30, 64, 175);
+  --dsw-static-blue-900: rgb(14, 48, 116);
+  --dsw-static-blue-950: rgb(23, 37, 84);
+  --dsw-static-deepseek-100: rgb(228, 237, 253);
+  --dsw-static-deepseek-200: rgb(211, 226, 255);
+  --dsw-static-deepseek-300: rgb(183, 200, 254);
+  --dsw-static-deepseek-400: rgb(103, 158, 254);
+  --dsw-static-deepseek-450: rgb(86, 134, 254);
+  --dsw-static-deepseek-500: rgb(65, 118, 230);
+  --dsw-static-deepseek-50: rgb(237, 243, 254);
+  --dsw-static-deepseek-600: rgb(72, 104, 178);
+  --dsw-static-deepseek-700-delete: rgb(47, 76, 143);
+  --dsw-static-deepseek-800: rgb(52, 65, 91);
+  --dsw-static-deepseek-900: rgb(40, 49, 66);
+  --dsw-static-green-100: rgb(230, 250, 237);
+  --dsw-static-green-400: rgb(78, 209, 126);
+  --dsw-static-green-500: rgb(34, 197, 94);
+  --dsw-static-green-900: rgb(35, 60, 44);
+  --dsw-static-neutral-00: rgb(255, 255, 255);
+  --dsw-static-neutral-1000: rgb(0, 0, 0);
+  --dsw-static-neutral-100: rgb(245, 245, 245);
+  --dsw-static-neutral-150: rgb(237, 237, 237);
+  --dsw-static-neutral-200: rgb(229, 229, 229);
+  --dsw-static-neutral-250: rgb(220, 220, 220);
+  --dsw-static-neutral-300: rgb(212, 212, 212);
+  --dsw-static-neutral-400: rgb(162, 164, 166);
+  --dsw-static-neutral-500: rgb(127, 130, 135);
+  --dsw-static-neutral-50: rgb(250, 250, 250);
+  --dsw-static-neutral-550: rgb(101, 103, 107);
+  --dsw-static-neutral-600: rgb(84, 85, 87);
+  --dsw-static-neutral-700: rgb(60, 60, 61);
+  --dsw-static-neutral-800: rgb(41, 41, 41);
+  --dsw-static-neutral-850: rgb(33, 33, 35);
+  --dsw-static-neutral-900: rgb(15, 15, 15);
+  --dsw-static-neutral-bluish-00: rgb(255, 255, 255);
+  --dsw-static-neutral-bluish-1000: rgb(15, 17, 21);
+  --dsw-static-neutral-bluish-100: rgb(235, 238, 242);
+  --dsw-static-neutral-bluish-150: rgb(233, 236, 242);
+  --dsw-static-neutral-bluish-200: rgb(225, 229, 238);
+  --dsw-static-neutral-bluish-300: rgb(207, 211, 214);
+  --dsw-static-neutral-bluish-400: rgb(173, 178, 184);
+  --dsw-static-neutral-bluish-500: rgb(151, 157, 166);
+  --dsw-static-neutral-bluish-50: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-600: rgb(129, 133, 140);
+  --dsw-static-neutral-bluish-60: rgb(245, 246, 247);
+  --dsw-static-neutral-bluish-700: rgb(97, 102, 107);
+  --dsw-static-neutral-bluish-750: rgb(67, 69, 74);
+  --dsw-static-neutral-bluish-75: rgb(241, 243, 245);
+  --dsw-static-neutral-bluish-800: rgb(53, 54, 56);
+  --dsw-static-neutral-bluish-850: rgb(44, 44, 46);
+  --dsw-static-neutral-bluish-875: rgb(35, 35, 36);
+  --dsw-static-neutral-bluish-900: rgb(27, 27, 28);
+  --dsw-static-neutral-bluish-950: rgb(21, 21, 23);
+  --dsw-static-red-100: rgb(254, 226, 226);
+  --dsw-static-red-400: rgb(242, 90, 90);
+  --dsw-static-red-500: rgb(239, 68, 68);
+  --dsw-static-red-50: rgb(254, 242, 242);
+  --dsw-static-red-600: rgb(236, 19, 19);
+  --dsw-static-red-900: rgb(87, 12, 12);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-static-amber-100: rgb(254, 245, 231);
+  --dsw-static-amber-400: rgb(247, 173, 49);
+  --dsw-static-amber-500: rgb(245, 158, 11);
+  --dsw-static-amber-600: rgb(221, 134, 41);
+  --dsw-static-amber-900: rgb(39, 36, 31);
+  --dsw-static-blue-100: rgb(219, 234, 254);
+  --dsw-static-blue-300: rgb(147, 197, 253);
+  --dsw-static-blue-400: rgb(96, 165, 250);
+  --dsw-static-blue-450: rgb(77, 147, 248);
+  --dsw-static-blue-500: rgb(59, 130, 246);
+  --dsw-static-blue-50: rgb(239, 246, 255);
+  --dsw-static-blue-50p: rgb(234, 243, 255);
+  --dsw-static-blue-600: rgb(37, 99, 235);
+  --dsw-static-blue-75: rgb(229, 240, 255);
+  --dsw-static-blue-800: rgb(30, 64, 175);
+  --dsw-static-blue-900: rgb(14, 48, 116);
+  --dsw-static-blue-950: rgb(23, 37, 84);
+  --dsw-static-deepseek-100: rgb(228, 237, 253);
+  --dsw-static-deepseek-200: rgb(211, 226, 255);
+  --dsw-static-deepseek-300: rgb(183, 200, 254);
+  --dsw-static-deepseek-400: rgb(103, 158, 254);
+  --dsw-static-deepseek-450: rgb(86, 134, 254);
+  --dsw-static-deepseek-500: rgb(65, 118, 230);
+  --dsw-static-deepseek-50: rgb(237, 243, 254);
+  --dsw-static-deepseek-600: rgb(72, 104, 178);
+  --dsw-static-deepseek-700-delete: rgb(47, 76, 143);
+  --dsw-static-deepseek-800: rgb(52, 65, 91);
+  --dsw-static-deepseek-900: rgb(40, 49, 66);
+  --dsw-static-green-100: rgb(230, 250, 237);
+  --dsw-static-green-400: rgb(78, 209, 126);
+  --dsw-static-green-500: rgb(34, 197, 94);
+  --dsw-static-green-900: rgb(35, 60, 44);
+  --dsw-static-neutral-00: rgb(255, 255, 255);
+  --dsw-static-neutral-1000: rgb(0, 0, 0);
+  --dsw-static-neutral-100: rgb(245, 245, 245);
+  --dsw-static-neutral-150: rgb(237, 237, 237);
+  --dsw-static-neutral-200: rgb(229, 229, 229);
+  --dsw-static-neutral-250: rgb(220, 220, 220);
+  --dsw-static-neutral-300: rgb(212, 212, 212);
+  --dsw-static-neutral-400: rgb(162, 164, 166);
+  --dsw-static-neutral-500: rgb(127, 130, 135);
+  --dsw-static-neutral-50: rgb(250, 250, 250);
+  --dsw-static-neutral-550: rgb(101, 103, 107);
+  --dsw-static-neutral-600: rgb(84, 85, 87);
+  --dsw-static-neutral-700: rgb(60, 60, 61);
+  --dsw-static-neutral-800: rgb(41, 41, 41);
+  --dsw-static-neutral-850: rgb(33, 33, 35);
+  --dsw-static-neutral-900: rgb(15, 15, 15);
+  --dsw-static-neutral-bluish-00: rgb(255, 255, 255);
+  --dsw-static-neutral-bluish-1000: rgb(15, 17, 21);
+  --dsw-static-neutral-bluish-100: rgb(235, 238, 242);
+  --dsw-static-neutral-bluish-150: rgb(233, 236, 242);
+  --dsw-static-neutral-bluish-200: rgb(225, 229, 238);
+  --dsw-static-neutral-bluish-300: rgb(207, 211, 214);
+  --dsw-static-neutral-bluish-400: rgb(173, 178, 184);
+  --dsw-static-neutral-bluish-500: rgb(151, 157, 166);
+  --dsw-static-neutral-bluish-50: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-600: rgb(129, 133, 140);
+  --dsw-static-neutral-bluish-60: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-700: rgb(97, 102, 107);
+  --dsw-static-neutral-bluish-750: rgb(67, 69, 74);
+  --dsw-static-neutral-bluish-75: rgb(241, 243, 245);
+  --dsw-static-neutral-bluish-800: rgb(53, 54, 56);
+  --dsw-static-neutral-bluish-850: rgb(44, 44, 46);
+  --dsw-static-neutral-bluish-875: rgb(35, 35, 36);
+  --dsw-static-neutral-bluish-900: rgb(27, 27, 28);
+  --dsw-static-neutral-bluish-950: rgb(21, 21, 23);
+  --dsw-static-red-100: rgb(254, 226, 226);
+  --dsw-static-red-400: rgb(242, 90, 90);
+  --dsw-static-red-500: rgb(239, 68, 68);
+  --dsw-static-red-50: rgb(254, 242, 242);
+  --dsw-static-red-600: rgb(236, 19, 19);
+  --dsw-static-red-900: rgb(87, 12, 12);
+}
+
+body {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-document-preview: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-label-document-preview: var(--dsw-static-neutral-bluish-200);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24);
+  --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.12);
+  --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);
+  --dsw-alias-bg-mask-photo: rgba(0, 0, 0, 0.88);
+  --dsw-alias-bg-mask-drop: rgba(255, 255, 255, 0.7);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-bg-multi-select: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-150);
+  --dsw-alias-bg-skeleton: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-inverted2: rgba(0, 0, 0, 0);
+  --dsw-alias-border-inverted: rgba(0, 0, 0, 0);
+  --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-l2-darkmode-thin: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
+  --dsw-alias-border-l4: rgba(0, 0, 0, 0.16);
+  --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: rgb(65, 118, 230);
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-button-contrast-fill: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-button-elevated-fill: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-floating-hover: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-button-ghost-active-border: var(--dsw-static-neutral-bluish-500);
+  --dsw-alias-button-ghost-active-fill: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-ghost-active-hover: var(--dsw-static-neutral-bluish-150);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(31, 31, 31, 0.36);
+  --dsw-alias-button-tool-bar-fill: rgba(84, 85, 87, 0.5);
+  --dsw-alias-button-tool-bar-hover: rgba(84, 85, 87, 0.6);
+  --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
+  --dsw-alias-interactive-bg-hover-accent: rgba(38, 49, 72, 0.14);
+  --dsw-alias-interactive-bg-hover-danger: rgba(236, 19, 19, 0.05);
+  --dsw-alias-interactive-bg-hover-solid: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-label-caption: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-200);
+  --dsw-alias-label-primary-bluish: var(--dsw-static-blue-900);
+  --dsw-alias-label-primary-dimmed: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-primary-inverted: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-link: var(--dsw-static-deepseek-500);
+  --dsw-alias-markdown-citation: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-markdown-code-block-banner: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-markdown-code-block: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-markdown-code-segment-selected: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-markdown-code-segment-unselected: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-50);
+  --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-200);
+  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-200);
+  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-300);
+  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-300);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-500);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-100);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-600);
+  --dsw-alias-state-error-secondary: var(--dsw-static-red-400);
+  --dsw-alias-state-success-primary: var(--dsw-static-green-500);
+  --dsw-alias-state-success-secondary: var(--dsw-static-green-400);
+  --dsw-alias-state-success-tertiary: var(--dsw-static-green-100);
+  --dsw-alias-state-warn-label: var(--dsw-static-amber-600);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-100);
+  --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-bubble-highlight: var(--dsw-static-deepseek-200);
+  --dsw-specific-bubble: var(--dsw-static-deepseek-50);
+  --dsw-specific-input-major: var(--dsw-static-neutral-bluish-00);
+  --dsw-specific-login-input: var(--dsw-static-neutral-bluish-50);
+  --dsw-specific-menu: var(--dsw-alias-bg-layer-3);
+  --dsw-specific-selector: var(--dsw-static-neutral-bluish-60);
+  --dsw-specific-sidebar-fill: var(--dsw-static-neutral-bluish-50);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-deepseek-100);
+  --dsw-specific-sidebar-nav-item-active: var(--dsw-static-neutral-bluish-100);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-75);
+  --dsw-specific-tip: var(--dsw-static-neutral-bluish-60);
+
+  background-color: var(--dsw-alias-bg-base);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-bg-document-preview: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-label-document-preview: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
+  --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.2);
+  --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);
+  --dsw-alias-bg-mask-photo: rgba(0, 0, 0, 0.88);
+  --dsw-alias-bg-mask-drop: rgba(39, 39, 48, 0.7);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-multi-select: var(--dsw-static-neutral-850);
+  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
+  --dsw-alias-border-inverted2: rgba(255, 255, 255, 0.08);
+  --dsw-alias-border-inverted: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-border-l4: rgba(255, 255, 255, 0.2);
+  --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: var(--dsw-static-deepseek-450);
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-button-contrast-fill: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-button-elevated-fill: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-button-floating-hover: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-button-ghost-active-border: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-button-ghost-active-fill: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-ghost-active-hover: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(31, 31, 31, 0.36);
+  --dsw-alias-button-tool-bar-fill: rgba(84, 85, 87, 0.5);
+  --dsw-alias-button-tool-bar-hover: rgba(84, 85, 87, 0.6);
+  --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+  --dsw-alias-interactive-bg-hover-accent: rgba(255, 255, 255, 0.24);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, 0.15);
+  --dsw-alias-interactive-bg-hover-solid: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-label-caption: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-label-primary-bluish: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-primary-dimmed: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-primary-inverted: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-link: var(--dsw-static-deepseek-400);
+  --dsw-alias-markdown-citation: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-markdown-code-block-banner: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-code-block: var(--dsw-static-neutral-bluish-900);
+  --dsw-alias-markdown-code-segment-selected: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-markdown-code-segment-unselected: var(--dsw-static-neutral-bluish-900);
+  --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-800);
+  --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-700);
+  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-600);
+  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-600);
+  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-550);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-400);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-800);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-400);
+  --dsw-alias-state-error-secondary: var(--dsw-static-red-400);
+  --dsw-alias-state-success-primary: var(--dsw-static-green-500);
+  --dsw-alias-state-success-secondary: var(--dsw-static-green-400);
+  --dsw-alias-state-success-tertiary: var(--dsw-static-green-900);
+  --dsw-alias-state-warn-label: var(--dsw-static-amber-600);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-900);
+  --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-bubble-highlight: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-bubble: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-input-major: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-login-input: var(--dsw-static-neutral-bluish-900);
+  --dsw-specific-menu: var(--dsw-alias-bg-layer-3);
+  --dsw-specific-selector: var(--dsw-static-neutral-bluish-800);
+  --dsw-specific-sidebar-fill: var(--dsw-static-neutral-bluish-900);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-neutral-bluish-800);
+  --dsw-specific-sidebar-nav-item-active: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-tip: var(--dsw-static-neutral-bluish-800);
+}
+
+/* base.css */
+:root {
+  --dsw-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --ds-font-family-code: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
+    'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei';
+  --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-transition-duration: 0.2s;
+  --ds-transition-duration-fast: 0.1s;
+  --ds-transition-duration-slow: 0.3s;
+}
+
+/* gradient-shadow-text.css — only what this mock reads */
+body {
+  --dsw-linear-gradient-think: linear-gradient(180deg, #fff 20.19%, rgba(255, 255, 255, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #f5f6f7 20.19%, rgba(245, 246, 247, 0) 100%);
+  --dsw-shadow-lv1: 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+  --dsw-shadow-lv1-blur: 0 4px 12px 0 rgba(0, 0, 0, 0.02);
+  --dsw-shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  --dsw-shadow-lv3:
+    0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l4);
+  --dsw-mask-blur: blur(2px);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-linear-gradient-think: linear-gradient(180deg, #151517 20.19%, rgba(21, 21, 23, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #232325 20.19%, rgba(35, 35, 37, 0) 100%);
+}
+
+body,
+body * {
+  --dsw-elevation-stroke: 0 0 0 0.5px var(--dsw-elevation-stroke-color);
+  --dsw-elevation-panel:
+    var(--dsw-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.03), 0 0 16px 0 rgba(0, 0, 0, 0.02);
+  --dsw-elevation-prominent:
+    var(--dsw-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.04), 0 0 20px 0 rgba(0, 0, 0, 0.05);
+  --dsw-elevation-soft:
+    var(--dsw-elevation-stroke), 0 4px 16px 0 rgba(0, 0, 0, 0.03), 0 0 24px 0 rgba(0, 0, 0, 0.03);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   2. DOCUMENT CHROME — the mock's own frame (not carried into the product)
+   ───────────────────────────────────────────────────────────────────────── */
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font-family: var(--dsw-font-family);
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.d-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.d-title { font-weight: 600; }
+.d-sub { color: var(--dsw-alias-label-tertiary); font-size: 13px; }
+.d-sub code { font-family: var(--dsw-font-mono, ui-monospace, monospace); font-size: 12px; }
+.d-sp { flex: 1; }
+.d-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.d-nav a {
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary);
+  text-decoration: none;
+  font-size: 13px;
+}
+.d-nav a:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.d-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.d-btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.d-btn.on { background: var(--dsw-alias-interactive-bg-active); }
+
+.d-doc { max-width: 1500px; margin: 0 auto; padding: 20px 24px 80px; }
+.d-doc h1 { font-size: 26px; line-height: 34px; margin: 8px 0 6px; }
+.d-doc h2 {
+  font-size: 19px;
+  line-height: 28px;
+  margin: 40px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.d-doc h3 { font-size: 15px; margin: 22px 0 6px; color: var(--dsw-alias-label-secondary); }
+.d-lead { max-width: 92ch; color: var(--dsw-alias-label-secondary); line-height: 22px; }
+.d-note { max-width: 92ch; color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 20px; }
+.d-note code, .d-lead code {
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  background: var(--dsw-alias-markdown-code-block);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.d-states { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
+.d-states .d-label { color: var(--dsw-alias-label-tertiary); font-size: 13px; margin-right: 2px; }
+.d-caption { margin-top: 8px; color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 20px; max-width: 120ch; }
+.d-legend {
+  display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 0;
+  color: var(--dsw-alias-label-tertiary); font-size: 12px;
+}
+.d-legend i { font-style: normal; color: var(--dsw-alias-label-secondary); }
+.d-table { border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.d-table th, .d-table td {
+  text-align: left; padding: 5px 12px 5px 0; vertical-align: top;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.d-table th { color: var(--dsw-alias-label-tertiary); font-weight: 500; }
+.d-table code { font-family: var(--dsw-font-mono, ui-monospace, monospace); font-size: 12px; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   3. HARNESS CHROME — an approximation. Sizes from ui-sidebar/SidebarRoot.module.css
+   and ui-settings-general/SettingsRoot.module.css; the shell classes are hashed by the build.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.h-app {
+  position: relative;
+  display: flex;
+  /* Frame height: the live sidebar's equals the window. Here it is taller, so the picture
+     fits the whole panel body; the body itself scrolls anyway (STYLE.body). */
+  height: 1180px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+/* SidebarRoot: padding 6px 12px, --dsw-specific-sidebar-fill, font-size 14px.
+   Width: 451px — the width at which the parity gate measures the live panel. */
+.h-sidebar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 451px;
+  padding: 6px 12px;
+  font-size: 14px;
+  background: var(--dsw-specific-sidebar-fill);
+  border-right: 1px solid var(--dsw-alias-border-l1);
+}
+.h-brand {
+  display: flex; align-items: center; gap: 8px;
+  height: 40px; padding-left: 4px;
+  font-weight: 600; font-size: 15px;
+}
+.h-brand .h-glyph {
+  width: 20px; height: 20px; border-radius: 6px;
+  background: var(--dsw-alias-brand-primary);
+}
+.h-tabs { display: flex; gap: 4px; margin: 6px 0 8px; }
+.h-tab {
+  height: 36px; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; border-radius: 12px;
+  background: transparent; color: var(--dsw-alias-label-secondary);
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.h-tab:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
+.h-tab.on { background: var(--dsw-specific-sidebar-nav-item-active); color: var(--dsw-alias-label-primary); }
+.h-pane { flex: 1; min-height: 0; }
+.h-sidefoot { flex: none; margin-top: 6px; }
+.h-trigger {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 42px; padding: 0 10px 0 8px;
+  border: none; border-radius: 12px; background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.h-trigger:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.h-main {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+}
+.h-mainhead {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  height: 52px; padding: 0 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+}
+.h-mainhead .h-chip {
+  padding: 1px 7px; border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+.h-chat { flex: 1; min-height: 0; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.h-msg { max-width: 62ch; line-height: 22px; }
+.h-msg.h-user {
+  align-self: flex-end;
+  padding: 10px 14px; border-radius: 14px;
+  background: var(--dsw-specific-bubble);
+}
+.h-msg.h-assistant { color: var(--dsw-alias-label-primary); }
+.h-msg .h-modeltag { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.h-composer {
+  flex: none; margin: 0 20px 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-tertiary);
+  box-shadow: var(--dsw-elevation-soft);
+}
+
+/* Settings dialog: SettingsRoot.module.css (.panel 800×min(800px,100vh-48px),
+   r32, bg-layer-2, --dsw-elevation-prominent; .nav 188px; .options pad 24) */
+.h-modal {
+  position: relative;
+  margin: 12px 0 0;
+  height: 1060px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+.h-mask {
+  position: absolute; inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+}
+.h-panel {
+  position: absolute; inset: 0; margin: auto;
+  display: flex;
+  width: 800px;
+  height: min(800px, calc(100% - 48px));
+  max-width: calc(100% - 48px);
+  border-radius: 32px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-size: 14px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+}
+.h-nav {
+  flex: none; display: flex; flex-direction: column; gap: 18px;
+  width: 188px; padding: 22px 12px 0;
+}
+.h-navtitle { padding: 0 12px; font-size: 16px; line-height: 24px; font-weight: 500; }
+.h-navlist { display: flex; flex-direction: column; gap: 4px; }
+.h-navcell {
+  display: flex; align-items: center; gap: 8px;
+  height: 40px; padding: 9px 16px 9px 12px;
+  border: none; border-radius: 12px; background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit; font-size: 14px; line-height: 22px; text-align: left; cursor: pointer;
+}
+.h-navcell:hover { background: var(--dsw-specific-sidebar-nav-item-hover); }
+.h-navcell.on { background: var(--dsw-specific-sidebar-nav-item-active); }
+.h-navicon {
+  flex: none; width: 16px; height: 16px; border-radius: 4px;
+  border: 1.5px solid currentColor; opacity: .7;
+}
+.h-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.h-panelhead {
+  flex: none; display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 8px; height: 54px; padding: 20px 14px 8px 10px;
+}
+.h-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: none; border-radius: 28px; background: transparent;
+  color: var(--dsw-alias-label-primary); font: inherit; cursor: pointer;
+}
+.h-close:hover { background: var(--dsw-alias-interactive-bg-hover); }
+/* .options: pad (24,0,24,24), scrolls */
+.h-options { flex: 1; min-height: 0; overflow: auto; padding: 24px 24px 24px 24px; }
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   4. SURFACE PRIMITIVES — one scheme for every block
+   The tab, the drawer and the settings page share one vocabulary. The rules:
+
+     * block label        — .block-label / .disclosure-head: caps, .8em, tertiary
+     * block number       — only in its header (.count), never repeated in the body
+     * row                — .row: dot · name · word · chip
+     * chip and tag       — .tag / .chip: one layer plate, mono, .85em
+     * fact under a row   — .detail: .85em, a ruler on the left, one ladder step
+     * empty state        — .empty / .hint: one line, no duplicate title
+     * disclosure         — .disclosure > .disclosure-head + .disclosure-body
+     * block separation   — .body > * + *: a ruler and 8px, the same everywhere
+   ───────────────────────────────────────────────────────────────────────── */
+
+.panel-bar { display: flex; align-items: baseline; gap: 6px; padding: 7px 9px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); flex-wrap: wrap; }
+.body { min-height: 0; overflow: auto; padding: 9px 10px; }
+.body.scroll { flex: 1; }
+.body > .block:not(:first-child), .body > .disclosure:not(:first-child) { margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.spacer { flex: 1; }
+
+.block-head, .toolbar { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.block-head { justify-content: flex-start; }
+.toolbar { align-items: center; }
+.block-label, .group { color: var(--dsw-alias-label-tertiary, #81858c);
+  font-size: .8em; letter-spacing: .08em; text-transform: uppercase; }
+.group { margin: 7px 0 1px; font-size: .75em; opacity: .85; }
+/* The server-group row of the `hidden` tier with its pin action (F-44): the label
+   stays a reading, the button moves to the right edge, like any block action. */
+.group-row { display: flex; align-items: baseline; gap: 6px; }
+/* The server name and its toggle on a server row of the Tools page (F-44). */
+.setting-control { display: inline-flex; align-items: center; gap: 6px; }
+.count { color: var(--dsw-alias-label-tertiary, #81858c); font-size: .85em; }
+
+.row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; flex-wrap: wrap; }
+.row.quiet { opacity: .6; }
+.plain { padding: 0; border: none; background: transparent; color: inherit;
+  cursor: pointer; font: inherit; text-align: left; }
+.name { font-family: var(--dsw-font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.name.on { color: var(--dsw-alias-state-business-primary, inherit); }
+.muted { color: var(--dsw-alias-label-secondary, inherit); }
+.dim { color: var(--dsw-alias-label-tertiary, #81858c); }
+.hint { color: var(--dsw-alias-label-tertiary, #81858c); font-size: .85em;
+  overflow-wrap: anywhere; max-width: 72ch; }
+.empty-title { color: var(--dsw-alias-label-primary, inherit); opacity: .9; }
+
+.detail { margin: 1px 0 3px; padding-left: 12px; margin-left: 0;
+  border-left: 2px solid var(--dsw-alias-border-l2, rgba(127,127,127,.4));
+  color: var(--dsw-alias-label-primary, inherit); opacity: .8;
+  font-size: .85em; overflow-wrap: anywhere; white-space: pre-wrap; }
+.detail.error { border-left-color: var(--dsw-alias-state-error-primary, #ec1313); }
+.warn { margin: 8px 0; padding: 5px 7px;
+  border-left: 2px solid var(--dsw-alias-state-warn-primary, #f59e0b);
+  background: var(--dsw-alias-state-warn-tertiary, transparent);
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: .85em; overflow-wrap: anywhere; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  flex: none; align-self: center; }
+.s-active { background: var(--dsw-alias-state-success-primary, #22c55e); }
+.s-warn { background: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.s-error { background: var(--dsw-alias-state-error-primary, #ec1313); }
+.s-idle { background: var(--dsw-alias-label-tertiary, #81858c); }
+.c-active { color: var(--dsw-alias-state-success-primary, #22c55e); }
+.c-warn { color: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.c-error { color: var(--dsw-alias-state-error-primary, #ec1313); }
+.c-idle { color: var(--dsw-alias-label-tertiary, #81858c); }
+
+.tag { background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,.12));
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: .85em; border-radius: 4px; padding: 0 5px;
+  color: var(--dsw-alias-label-secondary, inherit); white-space: nowrap; }
+.tag.warn { color: var(--dsw-alias-state-error-primary, #ec1313); }
+.tag.quiet { color: var(--dsw-alias-label-tertiary, #81858c); }
+/* A profile-level conflict is a warning, not an error: the same chip in the
+   `STYLE.tagWarn` tone (`--dsw-alias-state-warn-label`). A duplicate declaration
+   carries the error tone, and that is `.tag.warn` above — also `STYLE.tagError`. */
+.tag.warn-label { color: var(--dsw-alias-state-warn-label, #b45309); }
+.chip { border: none; cursor: pointer; font: inherit;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: .85em; border-radius: 4px; padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,.12));
+  color: var(--dsw-alias-label-secondary, inherit); }
+.chip.on { background: var(--dsw-alias-interactive-bg-active, rgba(127,127,127,.18));
+  color: var(--dsw-alias-label-primary, inherit); }
+/* The tools-filter tier chip (F-43): the same plate as `.tag` — the product
+   takes `STYLE.tag` (`LAYER_3_CHIP`) and adds three button resets — hence the
+   tag padding `0 5px`, not the logs filter's `1px 6px`. The text is the same
+   `{count} {label}`: a tier's number is said once (F-37). */
+.tier { background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,.12));
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: .85em; border-radius: 4px; padding: 0 5px;
+  color: var(--dsw-alias-label-secondary, inherit); border: none; cursor: pointer; }
+.tier.on { background: var(--dsw-alias-interactive-bg-active, rgba(127,127,127,.18));
+  color: var(--dsw-alias-label-primary, inherit); }
+/* The filter bar: the query field, `Clear` and the note — the product's
+   `STYLE.filterInput`, `STYLE.button` and `STYLE.dim`. */
+.filter-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; }
+.filter-field { flex: 1; min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); border-radius: 4px;
+  padding: 2px 6px; background: var(--dsw-alias-bg-layer-1, transparent);
+  color: inherit; font: inherit; font-size: .85em; }
+.filter-note { color: var(--dsw-alias-label-tertiary, #81858c); font-size: .9em; }
+.btn { padding: 2px 8px; border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.btn:disabled { cursor: default; opacity: .6; }
+/* The entry choice in a profile-level conflict — `STYLE.choiceRow` and the
+   `choiceOn` / `choiceOff` pair. The button base is `.btn` itself (its border,
+   padding and radius are `choiceOff`), `.choice` adds the `choiceOff` tone,
+   `.choice.on` — the `choiceOn` tone. The row wraps a long alias instead of
+   cutting it. */
+.choice-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.choice { color: var(--dsw-alias-label-secondary, inherit); }
+.choice.on { border-color: var(--dsw-alias-state-warn-label, #b45309);
+  background: var(--dsw-alias-bg-layer-2, rgba(127,127,127,.08)); color: inherit; }
+
+.disclosure-head { display: flex; align-items: baseline; gap: 6px; width: 100%;
+  padding: 0; border: none; background: transparent; font: inherit; text-align: left;
+  cursor: pointer; color: var(--dsw-alias-label-tertiary, #81858c);
+  font-size: .8em; letter-spacing: .08em; text-transform: uppercase; }
+.disclosure-body { padding-top: 4px; }
+.tool { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.tool-line { display: flex; align-items: baseline; gap: 6px; flex: 1; min-width: 0;
+  padding: 2px 0; border: none; background: transparent; color: inherit;
+  cursor: pointer; font: inherit; text-align: left; }
+.tool-line.static { cursor: default; }
+.tool-detail { flex-basis: 100%; padding: 2px 0 4px 12px; }
+
+.budget { height: 4px; margin: 4px 0 2px; border-radius: 2px;
+  background: var(--dsw-alias-interactive-bg-active, rgba(127,127,127,.18)); overflow: hidden; }
+.budget-used { display: block; height: 100%;
+  background: var(--dsw-alias-state-business-primary, currentColor); }
+.log-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; flex-wrap: wrap; }
+.log-time { font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-label-tertiary, #81858c); font-size: .85em; flex: none; }
+.lvl { flex: none; text-transform: none; font-weight: 500; }
+.lvl.up { color: var(--dsw-alias-state-success-primary, #22c55e); }
+.lvl.warn { color: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.lvl.error { color: var(--dsw-alias-state-error-primary, #ec1313); }
+.log-name { font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-label-secondary, inherit); flex: none; }
+.log-msg { flex: 1 1 100%; margin-top: 1px; overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary, inherit); }
+
+.indent-1 { padding-left: 12px; }
+.indent-2 { padding-left: 24px; }
+.indent-3 { padding-left: 36px; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   5. THE SETTINGS PAGE — the same primitives plus its own structures
+   ───────────────────────────────────────────────────────────────────────── */
+
+.card { border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  border-radius: 7px; margin-bottom: 7px; overflow: hidden; }
+.card-head { display: flex; align-items: center; gap: 7px; padding: 6px 9px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.seg { display: inline-flex; gap: 2px; padding: 1px; border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.seg-item { padding: 1px 8px; border: none; border-radius: 4px; background: transparent;
+  color: inherit; opacity: .65; cursor: pointer; font: inherit; font-size: .9em; }
+.seg-item.on { background: var(--dsw-alias-interactive-bg-active, rgba(127,127,127,.18)); opacity: 1; }
+.tbl { width: 100%; border-collapse: collapse; }
+.th { text-align: left; font-weight: 500; font-size: .8em; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--dsw-alias-label-tertiary, #81858c);
+  padding: 0 8px 5px 0; white-space: nowrap; }
+.td { padding: 6px 8px 6px 0; vertical-align: baseline;
+  border-top: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+
+.field { display: grid; grid-template-columns: 90px 1fr; gap: 5px 9px;
+  align-items: center; margin-bottom: 4px; }
+.field-label { color: var(--dsw-alias-label-tertiary, #81858c); font-size: .8em;
+  letter-spacing: .08em; text-transform: uppercase; }
+.input { border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  border-radius: 4px; padding: 2px 6px; background: transparent; color: inherit;
+  font: inherit; font-size: .85em; min-width: 0; }
+.field-text { border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  border-radius: 4px; padding: 2px 6px; font-size: .85em; min-width: 0;
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.field-hint { margin: -2px 0 6px 99px; font-size: .8em; opacity: .6; }
+.field-group { display: grid; grid-template-columns: 90px 1fr; gap: 4px 9px;
+  align-items: start; margin-bottom: 5px; }
+.field-row { display: flex; gap: 4px; align-items: center; margin-bottom: 3px; }
+.field-key { flex: none; min-width: 90px; font-size: .8em;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.icon-btn { flex: none; padding: 1px 5px; border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: .8em; }
+.btn-primary { padding: 2px 8px; border-radius: 4px; border: 1px solid transparent;
+  background: var(--dsw-alias-button-primary-fill, currentColor);
+  color: var(--dsw-alias-label-primary-foreground, inherit);
+  cursor: pointer; font: inherit; }
+
+.split { display: flex; align-items: stretch; min-height: 260px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  border-radius: 7px; overflow: hidden; }
+.split-bar, .split-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.split-bar { margin-bottom: 6px; }
+.split-footer { margin-top: 6px; }
+.pane-list { flex: 1 1 168px; min-width: 0; overflow: auto;
+  border-right: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.pane-column { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; }
+.pane-form { flex: none; min-width: 0; padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.pane-json { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;
+  background: var(--dsw-alias-markdown-code-block, transparent); }
+.pane-head { padding: 5px 8px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  color: var(--dsw-alias-label-tertiary, #81858c); font-size: .8em;
+  letter-spacing: .08em; text-transform: uppercase; }
+.json { margin: 0; padding: 8px 10px; font-size: .8em; white-space: pre; overflow-x: auto;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace); }
+/* The document body: the same field as the form's — editable, mono, wrapping. */
+.json-area { flex: 1 1 auto; min-height: 160px; margin: 0; padding: 8px 10px;
+  border: none; background: transparent; color: inherit;
+  font: inherit; font-size: .8em; line-height: 1.5;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
+  resize: vertical; box-sizing: border-box; width: 100%; }
+.json-note { margin: 0; padding: 5px 8px; font-size: .85em;
+  border-left: 2px solid var(--dsw-alias-state-error-primary, #ec1313);
+  background: var(--dsw-alias-interactive-bg-hover-danger, transparent); }
+
+.switch { display: inline-flex; align-items: center; width: 26px; height: 15px;
+  border-radius: 8px; padding: 0; border: none; cursor: pointer; vertical-align: -2px;
+  background: var(--dsw-alias-border-l3, #d0d3d8); }
+.switch.on { background: var(--dsw-alias-state-business-primary, var(--dsw-alias-state-success-primary, #22c55e)); }
+.switch-knob { width: 11px; height: 11px; border-radius: 50%; margin-left: 2px;
+  pointer-events: none; background: var(--dsw-alias-label-primary-foreground, #fff); }
+.switch.on .switch-knob { margin-left: 13px; }
+
+.setting-row { display: flex; align-items: center; gap: 16px; padding: 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.setting-row.last { border-bottom: none; }
+.setting-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.setting-row-label { font-weight: 600; }
+.setting-group { margin-top: 16px; }
+.tag-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.note-ok { margin-top: 8px; padding: 5px 7px; font-size: .85em; overflow-wrap: anywhere;
+  border-left: 2px solid var(--dsw-alias-state-success-primary, #22c55e);
+  background: var(--dsw-alias-state-success-tertiary, transparent); }
+.note-error { margin-top: 8px; padding: 5px 7px; border-radius: 0 5px 5px 0;
+  border-left: 2px solid var(--dsw-alias-state-error-primary, #ec1313);
+  background: var(--dsw-alias-interactive-bg-hover-danger, transparent);
+  font-size: .85em; overflow-wrap: anywhere; }
+.error-state { padding: 10px 12px; }
+
+</style>
+</head>
+<body data-ds-dark-theme>
+<div class="d-bar">
+  <span class="d-title">dsh-project-mcp · the interface 1:1 with the harness</span>
+  <span class="d-sub">surfaces — per <code>src/client/*</code>; tokens — verbatim from <code>design-platform.css</code></span>
+  <span class="d-sp"></span>
+  <nav class="d-nav">
+    <a href="#tab">The tab</a>
+    <a href="#popup">The tab's drawer</a>
+    <a href="#settings">Settings</a>
+    <a href="#notes">Differences and boundaries</a>
+  </nav>
+  <button class="d-btn" id="theme-toggle" type="button">Theme: dark</button>
+</div>
+
+<main class="d-doc">
+  <h1>The plugin's interface inside the harness shell</h1>
+  <p class="d-lead">
+    This is a <b>design</b> of the interface: the tab's blocks are brought to one scheme — one
+    number per block, no repeated counter, summary or name; empty groups are not printed at all,
+    because the header counters already name them. The tokens are copied verbatim from the DSH
+    design system, the elements and their order are the same as the client's; the typography and
+    the class vocabulary are shared by all surfaces. Switch the theme with the button at the top
+    right; disclosures and tool rows are clickable.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       §1 THE SIDEBAR TAB — one surface, one block scheme
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section id="tab">
+    <h2>1. The sidebar tab — one surface</h2>
+    <p class="d-lead">
+      Contract: <code>docs/design/contracts/single-surface.md</code>. Body order:
+      <b>servers → <code>sessions</code> (only on a divergence) → tools → problems (only when there are any)
+      → logs</b>. One block scheme: an uppercase label on the left, the number on the right of the
+      block's header, rows under it, a fact as a <code>.detail</code> line under its own row. An empty
+      group is not drawn: the header counters already said "0".
+    </p>
+    <div class="d-states">
+      <span class="d-label">Stand state:</span>
+      <button class="d-btn on" type="button" data-tab-state="full">all states at once</button>
+      <button class="d-btn" type="button" data-tab-state="quiet">all is well</button>
+      <button class="d-btn" type="button" data-tab-state="no-servers">nothing declared</button>
+      <button class="d-btn" type="button" data-tab-state="tools-absent">tools not mounted</button>
+      <button class="d-btn" type="button" data-tab-state="mode-off">mode "off"</button>
+      <button class="d-btn" type="button" data-tab-state="mode-direct">all direct</button>
+      <button class="d-btn" type="button" data-tab-state="no-project">no project</button>
+      <button class="d-btn" type="button" data-tab-state="no-session">no session</button>
+    </div>
+
+    <div class="h-app">
+      <aside class="h-sidebar">
+        <div class="h-brand"><span class="h-glyph"></span>deepseek</div>
+        <div class="h-tabs">
+          <button class="h-tab" type="button">Chat</button>
+          <button class="h-tab on" type="button" aria-current="page">Project MCP</button>
+          <button class="h-tab" type="button">Files</button>
+        </div>
+        <div class="h-pane">
+
+          <!-- ── all states at once ── -->
+          <div data-tab-variant="full">
+            <div class="panel-bar">
+              <span class="name" title="/example/service">service</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">1 session</span>
+            </div>
+            <div class="body scroll">
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Servers</span>
+                  <span class="spacer"></span>
+                  <span class="count">1/7 up</span>
+                </div>
+                <div class="row" title="mounted, its tools are visible in this session">
+                  <span class="dot s-active"></span><span class="name">tglider</span>
+                  <span class="muted c-active">active</span><span class="tag">http</span>
+                </div>
+                <div class="row quiet" title="declared but not mounted — mounts on the next turn">
+                  <span class="dot s-idle"></span><span class="name">grafana-local</span>
+                  <span class="muted c-idle">idle</span><span class="tag">http</span>
+                </div>
+                <div class="row" title="see the detail">
+                  <span class="dot s-error"></span><span class="name">gateway</span>
+                  <span class="muted c-error">error</span><span class="tag">stdio</span>
+                </div>
+                <div class="detail error">no tool appeared in 60.2s · endpoint stdio docker</div>
+                <div class="row" title="mounted, no tool published yet">
+                  <span class="dot s-warn"></span><span class="name">playwright</span>
+                  <span class="muted c-warn">connecting</span><span class="tag">stdio</span>
+                </div>
+                <div class="row" title="the same serverName is reserved by a profile-level instance">
+                  <span class="dot s-warn"></span><span class="name">context7</span>
+                  <span class="muted c-warn">conflict</span><span class="tag">http</span>
+                </div>
+                <div class="detail">the name is taken by a live profile-level instance</div>
+                <div class="row quiet" title="lazy mounting is on">
+                  <span class="dot s-idle"></span><span class="name">rider</span>
+                  <span class="muted c-idle">idle</span><span class="tag">stdio</span>
+                </div>
+                <div class="detail">not mounted yet — this session has not started a turn</div>
+                <div class="row quiet" title="declared with enabled: false">
+                  <span class="dot s-idle"></span><span class="name">legacy-gh</span>
+                  <span class="muted c-idle">disabled</span><span class="tag">stdio</span>
+                </div>
+              </div>
+
+              <div class="disclosure">
+                <button class="disclosure-head" type="button" aria-expanded="false"
+                        title="show the sessions that differ from the project"
+                        data-disclosure="sessions"><span class="mk">▸</span> Sessions<span class="tag">1 differs</span></button>
+                <div class="disclosure-body indent-1" data-disclosure-body="sessions" hidden>
+                  <div class="row">
+                    <span class="name">8fce1c</span>
+                    <span class="tag">this session</span>
+                    <span class="muted">grafana-local: project <span class="c-active">active</span> → session <span class="c-idle">idle</span></span>
+                    <span class="spacer"></span>
+                    <button class="btn" type="button" title="session-8fce1c-4a3f-4d0b-9c11-2f6a7b8c9d10">Release</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Tools</span>
+                  <span class="spacer"></span>
+                  <span class="tag-list" data-tiers><button class="tier" type="button" aria-pressed="false"
+                    title="Show this tier alone; press again for every tier"
+                    data-tier-chip="pinned">1 pinned</button><button class="tier" type="button" aria-pressed="false"
+                    title="Show this tier alone; press again for every tier"
+                    data-tier-chip="counters">1 by the counters</button><button class="tier" type="button" aria-pressed="false"
+                    title="Show this tier alone; press again for every tier"
+                    data-tier-chip="disclosed">2 disclosed</button><button class="tier" type="button" aria-pressed="false"
+                    title="Show this tier alone; press again for every tier"
+                    data-tier-chip="hidden">2 hidden</button></span>
+                </div>
+                <div class="budget" title="4 of 5 (80%)"><span class="budget-used" style="width:80%"></span></div>
+                <div class="count">12800 / 20000 chars · ≈ 3200 tokens</div>
+                <div class="warn">over budget — further disclosures are rejected until something is unpinned</div>
+                <div class="filter-row">
+                  <input class="filter-field" type="search" placeholder="filter by name…"
+                         aria-label="filter this session’s tools by registry name" data-tool-filter>
+                  <button class="btn" type="button" hidden data-tool-filter-clear
+                          title="Show every tier and drop the query">Clear</button>
+                </div>
+                <div class="filter-note" hidden data-tool-filter-note></div>
+                <div class="group" data-tier="pinned">pinned</div>
+                <div class="group-row" data-tier="pinned">
+                  <span class="group">tglider · 1</span>
+                  <span class="spacer"></span>
+                  <button class="btn" type="button"
+                          title="Stop pinning every tool of this server">Unpin all</button>
+                </div>
+                <div class="tool" data-tier="pinned" data-name="mcp__tglider__workspace">
+                  <button class="tool-line static" type="button">
+                    <span class="dot s-active"></span><span class="name">mcp__tglider__workspace</span>
+                  </button>
+                  <button class="btn" type="button" title="Stop pinning this tool in every request">Unpin</button>
+                </div>
+                <div class="group" data-tier="counters">offered by the counters</div>
+                <div class="tool" data-tier="counters" data-name="mcp__tglider__catalog">
+                  <button class="tool-line static" type="button">
+                    <span class="dot s-idle"></span><span class="name">mcp__tglider__catalog</span>
+                  </button>
+                  <button class="btn" type="button" title="Keep this tool in every request of this project">Pin</button>
+                </div>
+                <div class="group" data-tier="disclosed">disclosed</div>
+                <div class="tool" data-tier="disclosed" data-name="mcp__grafana-local__query">
+                  <button class="tool-line" type="button" aria-expanded="false"
+                          title="show how this tool was offered"
+                          data-tool="disclosed-grafana">
+                    <span class="dot s-idle"></span><span class="name">mcp__grafana-local__query</span>
+                    <span class="count">step 3 · 03:26</span>
+                  </button>
+                  <button class="btn" type="button" title="Drop this disclosure">Hide</button>
+                  <div class="tool-detail" data-tool-detail="disclosed-grafana" hidden>
+                    <span class="detail">via session · step 3 · 03:26</span>
+                  </div>
+                </div>
+                <div class="tool" data-tier="disclosed" data-name="mcp__context7__docs">
+                  <button class="tool-line" type="button" aria-expanded="false"
+                          title="show how this tool was offered"
+                          data-tool="disclosed-context7">
+                    <span class="dot s-idle"></span><span class="name">mcp__context7__docs</span>
+                  </button>
+                  <button class="btn" type="button" title="Drop this disclosure">Hide</button>
+                  <div class="tool-detail" data-tool-detail="disclosed-context7" hidden>
+                    <span class="detail">via context</span>
+                  </div>
+                </div>
+                <div class="disclosure" data-tier="hidden" data-hidden-tier>
+                  <button class="disclosure-head" type="button" aria-expanded="false"
+                          title="available to the model through mcp_search_tools only"
+                          data-disclosure="tools-hidden"><span class="mk">▸</span> hidden<span class="tag" data-hidden-count>2</span></button>
+                  <div class="disclosure-body" data-disclosure-body="tools-hidden" hidden>
+                    <div data-hidden-group data-names="mcp__playwright__browser_navigate">
+                      <div class="group-row">
+                        <span class="group">playwright · <span data-hidden-group-count>1</span></span>
+                        <span class="spacer"></span>
+                        <button class="btn" type="button"
+                                title="Pin every hidden tool of this server in every request">Pin all</button>
+                      </div>
+                      <div class="tool" data-tier="hidden" data-name="mcp__playwright__browser_navigate">
+                        <button class="tool-line static" type="button">
+                          <span class="dot s-idle"></span><span class="name">mcp__playwright__browser_navigate</span>
+                        </button>
+                        <button class="btn" type="button" title="Keep this tool in every request of this project">Pin</button>
+                      </div>
+                    </div>
+                    <div data-hidden-group data-names="mcp__rider__get_solution">
+                      <div class="group-row">
+                        <span class="group">rider · <span data-hidden-group-count>1</span></span>
+                        <span class="spacer"></span>
+                        <button class="btn" type="button"
+                                title="Pin every hidden tool of this server in every request">Pin all</button>
+                      </div>
+                      <div class="tool" data-tier="hidden" data-name="mcp__rider__get_solution">
+                        <button class="tool-line static" type="button">
+                          <span class="dot s-idle"></span><span class="name">mcp__rider__get_solution</span>
+                        </button>
+                        <button class="btn" type="button" title="Keep this tool in every request of this project">Pin</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="disclosure">
+                <button class="disclosure-head" type="button" aria-expanded="false"
+                        title="show the servers that need a look"
+                        data-disclosure="errors"><span class="mk">▸</span> Problems<span class="tag">3</span></button>
+                <div class="disclosure-body" data-disclosure-body="errors" hidden>
+                  <div class="group">error</div>
+                  <div class="row">
+                    <span class="dot s-error"></span><span class="name">gateway</span><span class="tag">stdio</span>
+                    <span class="spacer"></span>
+                    <button class="btn" type="button" title="Retry this project’s failed mounts">Retry</button>
+                  </div>
+                  <div class="detail error">no tool appeared in 60.2s · endpoint stdio docker</div>
+                  <div class="group">conflict</div>
+                  <div class="row">
+                    <span class="dot s-warn"></span><span class="name">context7</span><span class="tag">http</span>
+                    <span class="spacer"></span>
+                    <button class="btn" type="button" title="Retry this project’s failed mounts">Retry</button>
+                  </div>
+                  <div class="detail">the name is taken by a live profile-level instance</div>
+                  <div class="group">connecting</div>
+                  <div class="row">
+                    <span class="dot s-warn"></span><span class="name">playwright</span><span class="tag">stdio</span>
+                    <span class="spacer"></span>
+                    <button class="btn" type="button" title="Retry this project’s failed mounts">Retry</button>
+                  </div>
+                  <button class="btn" type="button" title="Retry this project’s failed mounts">Retry failed</button>
+                </div>
+              </div>
+
+              <div class="disclosure">
+                <button class="disclosure-head" type="button" aria-expanded="false"
+                        title="show this project’s events"
+                        data-disclosure="logs"><span class="mk">▸</span> Logs<span class="tag">4</span></button>
+                <div class="disclosure-body" data-disclosure-body="logs" hidden>
+                  <div class="toolbar">
+                    <button class="chip on" type="button" aria-pressed="true">this session</button>
+                    <button class="chip" type="button" aria-pressed="false">all sessions</button>
+                    <span class="spacer"></span>
+                    <button class="chip on" type="button" aria-pressed="true">all levels</button>
+                    <button class="chip" type="button" aria-pressed="false">errors</button>
+                    <button class="btn" type="button" title="Hide every event recorded so far">Clear</button>
+                  </div>
+                  <div class="log-row">
+                    <span class="log-time">03:26:40</span><span class="tag lvl">info</span>
+                    <span class="log-name">tglider</span>
+                    <span class="log-msg">mounting for session 8fce1c (trigger: turn)</span>
+                  </div>
+                  <div class="log-row">
+                    <span class="log-time">03:26:41</span><span class="tag lvl up">up</span>
+                    <span class="log-name">tglider</span>
+                    <span class="log-msg">is up — tools visible to this session after 812ms</span>
+                  </div>
+                  <div class="log-row">
+                    <span class="log-time">03:26:42</span><span class="tag lvl warn">warn</span>
+                    <span class="log-name">grafana-local</span>
+                    <span class="log-msg">unmounting — the session went idle (it ran for 8m 03s)</span>
+                  </div>
+                  <div class="log-row">
+                    <span class="log-time">03:26:43</span><span class="tag lvl error">error</span>
+                    <span class="log-name">gateway</span>
+                    <span class="log-msg">no tool appeared in 4m 27s</span>
+                  </div>
+                  <div class="detail error">endpoint: stdio docker</div>
+                  <div class="toolbar">
+                    <button class="btn" type="button" title="Load older events">Show older</button>
+                    <span class="count">4 of 200</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── all is well: sessions agree, no problems, empty groups stay silent ── -->
+          <div data-tab-variant="quiet" hidden>
+            <div class="panel-bar">
+              <span class="name" title="/example/service">service</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">1 session</span>
+            </div>
+            <div class="body scroll">
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Servers</span>
+                  <span class="spacer"></span>
+                  <span class="count">2/2 up</span>
+                </div>
+                <div class="row" title="mounted, its tools are visible in this session">
+                  <span class="dot s-active"></span><span class="name">tglider</span>
+                  <span class="muted c-active">active</span><span class="tag">http</span>
+                </div>
+                <div class="row" title="mounted, its tools are visible in this session">
+                  <span class="dot s-active"></span><span class="name">grafana-local</span>
+                  <span class="muted c-active">active</span><span class="tag">http</span>
+                </div>
+              </div>
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Tools</span>
+                  <span class="spacer"></span>
+                  <span class="count">2 pinned · 0 disclosed · 0 hidden</span>
+                </div>
+                <div class="group">pinned</div>
+                <div class="tool">
+                  <button class="tool-line static" type="button">
+                    <span class="dot s-active"></span><span class="name">mcp__tglider__workspace</span>
+                  </button>
+                  <button class="btn" type="button" title="Stop pinning this tool in every request">Unpin</button>
+                </div>
+                <div class="tool">
+                  <button class="tool-line static" type="button">
+                    <span class="dot s-active"></span><span class="name">mcp__grafana-local__query</span>
+                  </button>
+                  <button class="btn" type="button" title="Stop pinning this tool in every request">Unpin</button>
+                </div>
+              </div>
+              <div class="disclosure">
+                <button class="disclosure-head" type="button" aria-expanded="false"
+                        title="show this project’s events"
+                        data-disclosure="logs-quiet"><span class="mk">▸</span> Logs<span class="tag">0</span></button>
+                <div class="disclosure-body" data-disclosure-body="logs-quiet" hidden>
+                  <div class="toolbar">
+                    <button class="chip on" type="button" aria-pressed="true">this session</button>
+                    <button class="chip" type="button" aria-pressed="false">all sessions</button>
+                    <span class="spacer"></span>
+                    <button class="chip" type="button" aria-pressed="false">all levels</button>
+                    <button class="chip on" type="button" aria-pressed="true">errors</button>
+                    <button class="btn" type="button" title="Hide every event recorded so far">Clear</button>
+                  </div>
+                  <div class="hint">No errors recorded — the ring holds other events; switch the level filter to read them.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── nothing declared: one empty surface, no second block ── -->
+          <div data-tab-variant="no-servers" hidden>
+            <div class="panel-bar">
+              <span class="name" title="/example/empty">empty</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">1 session</span>
+            </div>
+            <div class="body scroll">
+              <div class="empty-title">This project declares no MCP servers.</div>
+              <div class="hint">Add /example/empty/.dsh/mcp.json.</div>
+            </div>
+          </div>
+
+          <!-- ── tools not mounted yet ── -->
+          <div data-tab-variant="tools-absent" hidden>
+            <div class="panel-bar">
+              <span class="name" title="/example/service">service</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">1 session</span>
+            </div>
+            <div class="body scroll">
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Servers</span>
+                  <span class="spacer"></span>
+                  <span class="count">0/1 up</span>
+                </div>
+                <div class="row quiet" title="lazy mounting is on">
+                  <span class="dot s-idle"></span><span class="name">tglider</span>
+                  <span class="muted c-idle">idle</span><span class="tag">http</span>
+                </div>
+              </div>
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Tools</span>
+                </div>
+                <div class="hint">Nothing mounted yet — a project’s servers come up on the session’s first step.</div>
+              </div>
+              <div class="disclosure">
+                <button class="disclosure-head" type="button" aria-expanded="false"
+                        title="show this project’s events"
+                        data-disclosure="logs-absent"><span class="mk">▸</span> Logs<span class="tag">1</span></button>
+                <div class="disclosure-body" data-disclosure-body="logs-absent" hidden>
+                  <div class="log-row">
+                    <span class="log-time">03:31:12</span><span class="tag lvl">info</span>
+                    <span class="log-name">tglider</span>
+                    <span class="log-msg">declared, waiting for the session’s first step</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── mode "off" ── -->
+          <div data-tab-variant="mode-off" hidden>
+            <div class="panel-bar">
+              <span class="name" title="/example/service">service</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">1 session</span>
+            </div>
+            <div class="body scroll">
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Servers</span>
+                  <span class="spacer"></span>
+                  <span class="count">2/2 up</span>
+                </div>
+                <div class="row" title="mounted, its tools are not offered">
+                  <span class="dot s-active"></span><span class="name">tglider</span>
+                  <span class="muted c-active">active</span><span class="tag">http</span>
+                </div>
+                <div class="row" title="mounted, its tools are not offered">
+                  <span class="dot s-active"></span><span class="name">grafana-local</span>
+                  <span class="muted c-active">active</span><span class="tag">http</span>
+                </div>
+              </div>
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Tools</span>
+                  <span class="spacer"></span>
+                  <span class="count">4 mounted · none offered</span>
+                </div>
+                <div class="warn">this project’s MCP tools are switched off — the Tools page of the settings switches them back on</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── all direct ── -->
+          <div data-tab-variant="mode-direct" hidden>
+            <div class="panel-bar">
+              <span class="name" title="/example/service">service</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">1 session</span>
+            </div>
+            <div class="body scroll">
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Servers</span>
+                  <span class="spacer"></span>
+                  <span class="count">1/1 up</span>
+                </div>
+                <div class="row" title="mounted, its tools are visible in this session">
+                  <span class="dot s-active"></span><span class="name">tglider</span>
+                  <span class="muted c-active">active</span><span class="tag">http</span>
+                </div>
+              </div>
+              <div class="block">
+                <div class="block-head">
+                  <span class="block-label">Tools</span>
+                  <span class="spacer"></span>
+                  <span class="count">1 pinned · 0 disclosed · 0 hidden</span>
+                </div>
+                <div class="group">pinned</div>
+                <div class="tool">
+                  <button class="tool-line static" type="button">
+                    <span class="dot s-active"></span><span class="name">mcp__tglider__workspace</span>
+                  </button>
+                  <button class="btn" type="button" title="Stop pinning this tool in every request">Unpin</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── no project ── -->
+          <div data-tab-variant="no-project" hidden>
+            <div class="panel-bar">
+              <span class="muted">no project</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">0 sessions</span>
+            </div>
+            <div class="body scroll">
+              <div class="empty-title">This session’s folder is not inside a project yet.</div>
+              <div class="hint">The host walks up from the session cwd looking for .git · .dsh · .kimi-code · package.json.</div>
+            </div>
+          </div>
+
+          <!-- ── no session ── -->
+          <div data-tab-variant="no-session" hidden>
+            <div class="panel-bar">
+              <span class="muted">no project</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button">Sync</button>
+              <span class="count">0 sessions</span>
+            </div>
+            <div class="body scroll">
+              <div class="empty-title">No session is attached to this tab.</div>
+              <div class="hint">The panel reads the project of the session it is open in.</div>
+            </div>
+          </div>
+
+        </div>
+        <div class="h-sidefoot">
+          <button class="h-trigger" type="button"><span class="h-navicon"></span>Settings</button>
+        </div>
+      </aside>
+      <main class="h-main">
+        <header class="h-mainhead">
+          <strong>example-service</strong>
+          <span class="h-chip">deepseek-v4</span>
+        </header>
+        <div class="h-chat">
+          <div class="h-msg h-user">Bring up this project's servers and tell me what the model sees.</div>
+          <div class="h-msg h-assistant">
+            The <code>service</code> project declares seven servers; six are up, <code>gateway</code> returned
+            not a single tool in 60.2 s, and the name <code>context7</code> is taken by a live profile-level instance.
+            <div class="h-modeltag">deepseek-v4 · 3 steps</div>
+          </div>
+        </div>
+        <div class="h-composer">Ask about the project…</div>
+      </main>
+    </div>
+    <p class="d-caption">
+      The "all states at once" state mirrors the parity gate's fixture (<code>scripts/design-parity.mjs</code>):
+      all four dot tones, quiet rows, a failure with its detail, one session diverging from the project and
+      four events in the ring. "All is well" shows the scheme's main rule: the <code>sessions</code> section
+      is not drawn when the sessions agree, there is no problems disclosure when there are no problems, and
+      empty tool groups stay silent — the header counters name them.
+    </p>
+  </section>
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       §2 THE TAB'S SETTINGS DRAWER — side card (settings.render of the tab descriptor)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section id="popup">
+    <h2>2. The tab's settings drawer</h2>
+    <p class="d-lead">
+      The tab's own popover (<code>settings.render</code> in <code>betterSidebar.registerTab</code>), not a page:
+      it shows <b>all</b> projects with a live session, so the bar carries <code>Mounted per project</code>,
+      the project count and <code>Close</code>. A project's block is the same server rows as in the tab and
+      the same one-line divergence section.
+    </p>
+    <div style="max-width:451px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);padding:6px 12px">
+      <div>
+        <div class="panel-bar">
+          <span class="name">Mounted per project</span>
+          <span class="count">1 project</span>
+          <span class="spacer"></span>
+          <button class="btn" type="button">Sync</button>
+          <button class="btn" type="button">Close</button>
+        </div>
+        <div class="body scroll" style="overflow:visible">
+          <div class="block">
+            <div class="block-head">
+              <span class="name">service</span>
+              <span class="tag">this session</span>
+              <span class="spacer"></span>
+              <span class="count">1 active · 1 error · 1 connecting · 1 conflict · 2 idle</span>
+            </div>
+            <div class="row" title="mounted, its tools are visible in this session">
+              <span class="dot s-active"></span><span class="name">tglider</span><span class="tag">http</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="row quiet" title="declared but not mounted — mounts on the next turn">
+              <span class="dot s-idle"></span><span class="name">grafana-local</span><span class="tag">http</span>
+              <span class="tag quiet">idle</span><span class="spacer"></span>
+            </div>
+            <div class="row" title="see the detail">
+              <span class="dot s-error"></span><span class="name">gateway</span><span class="tag">stdio</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button" title="Retry this project’s failed mounts">Retry</button>
+            </div>
+            <div class="detail error">no tool appeared in 60.2s · endpoint stdio docker</div>
+            <div class="row" title="mounted, no tool published yet">
+              <span class="dot s-warn"></span><span class="name">playwright</span><span class="tag">stdio</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="row" title="the same serverName is reserved by a profile-level instance">
+              <span class="dot s-warn"></span><span class="name">context7</span><span class="tag">http</span>
+              <span class="spacer"></span>
+              <button class="btn" type="button" title="Retry this project’s failed mounts">Retry</button>
+            </div>
+            <div class="detail">the name is taken by a live profile-level instance</div>
+            <div class="row quiet" title="lazy mounting is on">
+              <span class="dot s-idle"></span><span class="name">rider</span><span class="tag">stdio</span>
+              <span class="tag quiet">idle</span><span class="spacer"></span>
+            </div>
+            <div class="row quiet" title="declared with enabled: false">
+              <span class="dot s-idle"></span><span class="name">legacy-gh</span><span class="tag">stdio</span>
+              <span class="tag quiet">disabled</span><span class="spacer"></span>
+            </div>
+          </div>
+
+          <div class="disclosure">
+            <button class="disclosure-head" type="button" aria-expanded="false"
+                    title="show the sessions that differ from the project"
+                    data-disclosure="popup-sessions"><span class="mk">▸</span> Sessions<span class="tag">1 differs</span></button>
+            <div class="disclosure-body indent-1" data-disclosure-body="popup-sessions" hidden>
+              <div class="row">
+                <span class="name">8fce1c</span>
+                <span class="tag">this session</span>
+                <span class="muted">grafana-local: project <span class="c-active">active</span> → session <span class="c-idle">idle</span></span>
+                <span class="spacer"></span>
+                <button class="btn" type="button" title="session-8fce1c-4a3f-4d0b-9c11-2f6a7b8c9d10">Release</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="d-caption">
+      The divergence section shows only the diverging session and the difference itself, not a
+      retelling of the rows: the project considers <code>grafana-local</code> active, the session —
+      gone <code>idle</code>. A project where everyone agrees does not draw this section, so a single
+      session's <code>Release</code> is available exactly when there is a divergence.
+    </p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       §3 THE PAGE IN THE NATIVE SETTINGS — settings.section, id project-mcp
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section id="settings">
+    <h2>3. The page in the native settings</h2>
+    <p class="d-lead">
+      A separate settings navigation item (the <code>settings.section</code> slot, id <code>project-mcp</code>,
+      order 900) — not a tab inside "Plugins". The same primitives as in the tab: an uppercase block label,
+      the number in the header, one kind of chip and button. The harness dialog: 800×min(800px, 100vh−48px),
+      radius 32, rail 188 px, the content ours.
+    </p>
+    <div class="d-states">
+      <span class="d-label">View:</span>
+      <button class="d-btn on" type="button" data-settings-view="table">Table</button>
+      <button class="d-btn" type="button" data-settings-view="files">By files</button>
+      <button class="d-btn" type="button" data-settings-view="editor">Entry editor</button>
+      <button class="d-btn" type="button" data-settings-view="tools">Tools</button>
+    </div>
+    <div class="h-modal">
+      <div class="h-mask"></div>
+      <div class="h-panel" role="dialog" aria-modal="true" aria-label="Settings">
+        <nav class="h-nav">
+          <div class="h-navtitle">Settings</div>
+          <div class="h-navlist">
+            <button class="h-navcell" type="button"><span class="h-navicon"></span>General</button>
+            <button class="h-navcell" type="button"><span class="h-navicon"></span>Models</button>
+            <button class="h-navcell" type="button"><span class="h-navicon"></span>Plugins</button>
+            <button class="h-navcell on" type="button" aria-current="true"><span class="h-navicon"></span>Project MCP</button>
+          </div>
+        </nav>
+        <div class="h-content">
+          <div class="h-panelhead">
+            <span></span>
+            <button class="h-close" type="button" aria-label="Close">✕</button>
+          </div>
+          <div class="h-options">
+            <div class="body" style="overflow:visible;padding:0">
+              <div class="toolbar" style="margin-bottom:10px">
+                <label class="muted">Project:
+                  <select class="input" aria-label="Project"><option>service</option></select>
+                </label>
+                <span class="count">1 project live session</span>
+                <span class="spacer"></span>
+                <span class="seg">
+                  <button class="seg-item on" type="button" aria-pressed="true" data-page="servers">Servers</button>
+                  <button class="seg-item" type="button" aria-pressed="false" data-page="tools">Tools</button>
+                </span>
+                <span class="seg" data-view-switch>
+                  <button class="seg-item on" type="button" aria-pressed="true" data-view="table">Table</button>
+                  <button class="seg-item" type="button" aria-pressed="false" data-view="files">By files</button>
+                </span>
+                <button class="btn" type="button" aria-pressed="false" data-json-toggle>Show JSON</button>
+                <button class="btn" type="button" title="Re-read host snapshot now">Sync</button>
+              </div>
+
+              <!-- ── view: the servers table ── -->
+              <div data-settings-body="table">
+                <div class="table-scroll">
+                  <table class="tbl">
+                    <thead>
+                      <tr>
+                        <th class="th">Server</th><th class="th">Transport</th><th class="th">Status</th>
+                        <th class="th">Source</th><th class="th">On</th><th class="th"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="td"><span class="dot s-active" title="mounted, its tools are visible" aria-hidden="true"></span> <button class="plain name" type="button" title="mounted, its tools are visible in this session">tglider</button></td>
+                        <td class="td"><span class="muted">streamable-http</span></td>
+                        <td class="td c-active">active</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch on" type="button" aria-checked="true" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Row actions">…</button></td>
+                      </tr>
+                      <tr>
+                        <td class="td"><span class="dot s-idle" title="declared but not mounted" aria-hidden="true"></span> <button class="plain name" type="button" title="declared but not mounted — mounts on the next turn">grafana-local</button></td>
+                        <td class="td"><span class="muted">streamable-http</span></td>
+                        <td class="td c-idle">idle</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch on" type="button" aria-checked="true" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Row actions">…</button></td>
+                      </tr>
+                      <tr>
+                        <td class="td"><span class="dot s-error" title="see the detail" aria-hidden="true"></span> <button class="plain name" type="button" title="no tool appeared in 60.2s">gateway</button></td>
+                        <td class="td"><span class="muted">stdio</span></td>
+                        <td class="td c-error">error</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch on" type="button" aria-checked="true" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Retry this project’s failed mounts">Retry</button></td>
+                      </tr>
+                      <tr>
+                        <td class="td"><span class="dot s-warn" title="mounted, no tool published yet" aria-hidden="true"></span> <button class="plain name" type="button" title="mounted, no tool published yet">playwright</button></td>
+                        <td class="td"><span class="muted">stdio</span></td>
+                        <td class="td c-warn">connecting</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch on" type="button" aria-checked="true" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Row actions">…</button></td>
+                      </tr>
+                      <tr>
+                        <td class="td"><span class="dot s-warn" title="the same serverName is reserved by a profile-level instance" aria-hidden="true"></span> <button class="plain name" type="button" title="the name is taken by a live profile-level instance">context7</button></td>
+                        <td class="td"><span class="muted">streamable-http</span></td>
+                        <td class="td c-warn">conflict</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch on" type="button" aria-checked="true" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Row actions">…</button></td>
+                      </tr>
+                      <tr>
+                        <td class="td"><span class="dot s-idle" title="lazy mounting is on" aria-hidden="true"></span> <button class="plain name" type="button" title="not mounted yet — this session has not started a turn">rider</button></td>
+                        <td class="td"><span class="muted">stdio</span></td>
+                        <td class="td c-idle">idle</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch on" type="button" aria-checked="true" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Row actions">…</button></td>
+                      </tr>
+                      <tr>
+                        <td class="td"><span class="dot s-idle" title="declared with enabled: false" aria-hidden="true"></span> <button class="plain name" type="button" title="declared with enabled: false">legacy-gh</button></td>
+                        <td class="td"><span class="muted">stdio</span></td>
+                        <td class="td c-idle">disabled</td>
+                        <td class="td"><span class="muted name" title="/example/service/.dsh/mcp.json">.dsh/mcp.json</span></td>
+                        <td class="td"><button class="switch" type="button" aria-checked="false" aria-label="On" title="Open this entry to edit it"><span class="switch-knob"></span></button></td>
+                        <td class="td"><button class="btn" type="button" title="Row actions">…</button></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div class="warn">gateway — no tool appeared in 60.2s · endpoint stdio docker</div>
+                </div>
+                <div data-json-preview hidden>
+                  <div class="pane-head">JSON preview</div>
+                  <div class="hint">The snapshot exactly as the host published it.</div>
+                  <pre class="json">{
+  "ready": true,
+  "watchedFiles": ["/example/service/.dsh/mcp.json"],
+  "projects": [{
+    "projectRoot": "/example/service",
+    "sessionIds": ["session-8fce1c"],
+    "rows": [
+      { "name": "tglider", "status": "active", "transport": "streamable-http" },
+      { "name": "gateway", "status": "error",  "transport": "stdio" }
+    ]
+  }]
+}</pre>
+                </div>
+              </div>
+
+              <!-- ── view: by files ── -->
+              <div data-settings-body="files" hidden>
+                <div class="card">
+                  <div class="card-head">
+                    <span class="name">.dsh/mcp.json</span>
+                    <span class="tag">priority 3/3</span>
+                    <span class="spacer"></span>
+                    <span class="count">6 servers</span>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-active"></span><button class="plain name" type="button">tglider</button>
+                    <span class="tag">http</span><span class="muted c-active">active</span>
+                    <span class="spacer"></span>
+                    <button class="switch on" type="button" aria-checked="true" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-error"></span><button class="plain name" type="button">gateway</button>
+                    <span class="tag">stdio</span><span class="muted c-error">error</span>
+                    <span class="spacer"></span>
+                    <button class="switch on" type="button" aria-checked="true" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-warn"></span><button class="plain name" type="button">playwright</button>
+                    <span class="tag">stdio</span><span class="muted c-warn">connecting</span>
+                    <span class="spacer"></span>
+                    <button class="switch on" type="button" aria-checked="true" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-idle"></span><button class="plain name" type="button">rider</button>
+                    <span class="tag">stdio</span><span class="muted c-idle">idle</span>
+                    <span class="spacer"></span>
+                    <button class="switch on" type="button" aria-checked="true" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-idle"></span><button class="plain name" type="button">legacy-gh</button>
+                    <span class="tag">stdio</span><span class="muted c-idle">disabled</span>
+                    <span class="spacer"></span>
+                    <button class="switch" type="button" aria-checked="false" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-idle"></span><button class="plain name" type="button">grafana-local</button>
+                    <span class="tag">http</span><span class="muted c-idle">idle</span>
+                    <span class="spacer"></span>
+                    <button class="switch on" type="button" aria-checked="true" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-head">
+                    <span class="name">~/.dsh/mcp.json</span>
+                    <span class="tag">global</span>
+                    <span class="spacer"></span>
+                    <span class="count">1 server</span>
+                  </div>
+                  <div class="row" style="padding:5px 9px">
+                    <span class="dot s-warn"></span><button class="plain name" type="button">context7</button>
+                    <span class="tag">http</span><span class="muted c-warn">conflict</span>
+                    <span class="spacer"></span>
+                    <button class="switch on" type="button" aria-checked="true" aria-label="On"><span class="switch-knob"></span></button>
+                  </div>
+                  <div class="hint" style="padding:3px 9px 6px 22px">↳ overrides context7 declared in a lower-priority document</div>
+                </div>
+                <p class="d-caption">
+                  The second card shows an element, not a fixture state: the global document
+                  displaces the project's same-named server.
+                </p>
+              </div>
+
+              <!-- ── view: the entry editor ── -->
+              <div data-settings-body="editor" hidden>
+                <div class="split-bar">
+                  <button class="btn" type="button" title="Return to the overview">‹ Back</button>
+                  <span class="hint">Editing .dsh/mcp.json: Save asks for confirmation and keeps a .bak copy.</span>
+                </div>
+                <div class="split">
+                  <div class="pane-list">
+                    <div class="pane-head">Servers</div>
+                    <div class="row" style="padding:4px 8px"><span class="dot s-active"></span><button class="plain name" type="button">tglider</button></div>
+                    <div class="row" style="padding:4px 8px"><span class="dot s-idle"></span><button class="plain name" type="button">grafana-local</button></div>
+                    <div class="row" style="padding:4px 8px;background:var(--dsw-alias-interactive-bg-active)"><span class="dot s-error"></span><button class="plain name on" type="button">gateway</button></div>
+                    <div class="row" style="padding:4px 8px"><span class="dot s-warn"></span><button class="plain name" type="button">playwright</button></div>
+                    <div class="row" style="padding:4px 8px"><span class="dot s-warn"></span><button class="plain name" type="button">context7</button></div>
+                    <div class="row" style="padding:4px 8px"><span class="dot s-idle"></span><button class="plain name" type="button">rider</button></div>
+                    <div class="row" style="padding:4px 8px"><span class="dot s-idle"></span><button class="plain name" type="button">legacy-gh</button></div>
+                  </div>
+                  <div class="pane-column">
+                    <div class="pane-form">
+                      <div class="pane-head">Entry</div>
+                      <div class="field">
+                        <span class="field-label">Name</span>
+                        <input class="input" value="gateway" readonly disabled title="Read-only: the declaration key the host reports." aria-label="Name">
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Command</span>
+                        <input class="input" value="docker" aria-label="Command">
+                      </div>
+                      <div class="field-group">
+                        <span class="field-label">Args</span>
+                        <div>
+                          <div class="field-row">
+                            <span class="field-key">args[0]</span>
+                            <input class="input" value="run" aria-label="args[0]">
+                            <button class="icon-btn" type="button" title="Drop this key">✕</button>
+                          </div>
+                          <div class="field-row">
+                            <span class="field-key">args[1]</span>
+                            <input class="input" value="--rm" aria-label="args[1]">
+                            <button class="icon-btn" type="button" title="Drop this key">✕</button>
+                          </div>
+                          <button class="btn" type="button" title="Append an empty key">Add key</button>
+                        </div>
+                      </div>
+                      <div class="field-group">
+                        <span class="field-label">Env</span>
+                        <div>
+                          <div class="field-row">
+                            <span class="field-key">MCP_LOG</span>
+                            <input class="input" value="debug" aria-label="MCP_LOG">
+                            <button class="icon-btn" type="button" title="Drop this key">✕</button>
+                          </div>
+                          <div class="field-row">
+                            <span class="field-key">GRAFANA_TOKEN</span>
+                            <input class="input" value="•••• unchanged — replace" readonly disabled title="Answered outside the document; written back untouched." aria-label="GRAFANA_TOKEN">
+                          </div>
+                          <div class="field-hint">One value per key; an empty value drops the entry.</div>
+                        </div>
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Transport</span>
+                        <select class="input" aria-label="Transport"><option>stdio</option><option>streamable-http</option></select>
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Enabled</span>
+                        <label style="display:flex;align-items:center;gap:6px">
+                          <input type="checkbox" checked aria-label="Enabled">
+                          <span class="hint">enabled: true</span>
+                        </label>
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Status</span>
+                        <input class="input" value="error" readonly disabled title="Read-only: the running host owns the status." aria-label="Status">
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Source</span>
+                        <input class="input" value=".dsh/mcp.json" readonly disabled aria-label="Source">
+                      </div>
+                      <div class="field">
+                        <span class="field-label">Detail</span>
+                        <div class="field-text" title="Read-only: the host’s own diagnostic." aria-label="Detail">no tool appeared in 60.2s · endpoint: stdio docker</div>
+                      </div>
+                    </div>
+                    <div class="pane-json">
+                      <div class="pane-head">.dsh/mcp.json · JSON diff</div>
+                      <textarea class="json-area" spellcheck="false" aria-label=".dsh/mcp.json · JSON diff" title="Edit the entry as the document declares it">{
+    "transport": "stdio",
+    "command": "docker",
+    "args": ["run", "--rm", "mcp/gateway"],
+    "env": {
+      "MCP_LOG": "debug"
+    }
+  }</textarea>
+                    </div>
+                  </div>
+                  </div>
+                <div class="split-footer">
+                  <button class="btn-primary" type="button" data-save>Save…</button>
+                  <span class="tag">1 change</span>
+                  <span class="spacer"></span>
+                  <span class="hint">→ .dsh/mcp.json · .bak copy · confirmation</span>
+                </div>
+                <div class="card" data-confirm hidden style="margin-top:6px;padding:8px 10px">
+                  <div class="empty-title">Write .dsh/mcp.json?</div>
+                  <div class="hint">The current document is copied to a .bak file first, then the entry is rewritten wholesale.</div>
+                  <div class="split-footer">
+                    <button class="btn-primary" type="button">Write document</button>
+                    <button class="btn" type="button" data-cancel>Cancel</button>
+                  </div>
+                </div>
+                <div class="note-ok" data-notice hidden>
+                  Saved: the document was written and re-read.
+                  <div class="hint">The host said: written /example/service/.dsh/mcp.json</div>
+                  <button class="btn" type="button" title="Refetch the snapshot and rebuild the form">Re-read</button>
+                </div>
+              </div>
+
+              <!-- ── view: tools ── -->
+              <div data-settings-body="tools" hidden>
+                <div class="table-scroll">
+                  <table class="tbl">
+                    <thead>
+                      <tr>
+                        <th class="th">Project</th><th class="th">Servers</th><th class="th">Tools</th>
+                        <th class="th">Pinned</th><th class="th">Mode</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="td">service</td><td class="td">7</td><td class="td">4</td><td class="td">1</td>
+                        <td class="td">
+                          <span class="seg">
+                            <button class="seg-item on" type="button" aria-pressed="true">disclosure</button>
+                            <button class="seg-item" type="button" aria-pressed="false">all direct</button>
+                            <button class="seg-item" type="button" aria-pressed="false">off</button>
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-row-text">
+                    <div class="setting-row-label">Mode</div>
+                    <div class="hint">the disclosure mode this project follows, and the tools it pins</div>
+                  </div>
+                  <span class="seg">
+                    <button class="seg-item on" type="button" aria-pressed="true">disclosure</button>
+                    <button class="seg-item" type="button" aria-pressed="false">all direct</button>
+                    <button class="seg-item" type="button" aria-pressed="false">off</button>
+                  </span>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-row-text">
+                    <div class="setting-row-label">tglider</div>
+                    <div class="hint">1 of 3 tools offered directly</div>
+                  </div>
+                  <span class="setting-control">
+                    <span class="count">streamable-http</span>
+                    <button class="switch" type="button" aria-checked="false"
+                            aria-label="tglider — pin this server’s tools"
+                            title="Pin every tool this server mounts — the hidden ones too — so every request carries them"><span class="switch-knob"></span></button>
+                  </span>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-row-text">
+                    <div class="setting-row-label">grafana-local</div>
+                    <div class="hint">all 4 tools offered directly</div>
+                  </div>
+                  <span class="setting-control">
+                    <span class="count">streamable-http</span>
+                    <button class="switch on" type="button" aria-checked="true"
+                            aria-label="grafana-local — unpin this server’s tools"
+                            title="Stop pinning the tools of this server"><span class="switch-knob"></span></button>
+                  </span>
+                </div>
+                <div class="setting-row last">
+                  <div class="setting-row-text">
+                    <div class="setting-row-label">gateway</div>
+                    <div class="hint">0 of 1 tools offered directly</div>
+                  </div>
+                  <span class="setting-control">
+                    <span class="count">stdio</span>
+                    <button class="switch" type="button" aria-checked="false"
+                            aria-label="gateway — pin this server’s tools"
+                            title="Pin every tool this server mounts — the hidden ones too — so every request carries them"><span class="switch-knob"></span></button>
+                  </span>
+                </div>
+                <div class="setting-group">
+                  <div class="block-label">pinned · written by hand</div>
+                  <div class="tag-list"><span class="tag">mcp__tglider__workspace</span><span class="tag">mcp__grafana-local__query</span><span class="tag">mcp__grafana-local__metrics</span><span class="tag">mcp__grafana-local__logs</span><span class="tag">mcp__grafana-local__schema</span></div>
+                </div>
+                <div class="setting-row last">
+                  <div class="setting-row-text">
+                    <div class="setting-row-label">Check conflicts</div>
+                    <div class="hint">re-read the snapshot and list the names another instance took</div>
+                  </div>
+                  <button class="btn" type="button">Check conflicts</button>
+                </div>
+                <div class="note-error">
+                  <strong>grafana-local</strong>
+                  <span class="tag warn-label">profile name</span>
+                  <div class="muted">"grafana-local" is owned by a profile-level mcp-client instance; this project's copy mounts as "p-grafana-local" when chosen beside it, or under the contested name when chosen to shadow it in this project's sessions, and does not mount at all while the profile's copy is the one shown.</div>
+                  <div class="hint">declared in /example/service/.dsh/mcp.json</div>
+                  <div class="choice-row">
+                    <span class="hint">show</span>
+                    <button class="btn choice on" type="button" aria-pressed="true" title="keep the profile instance’s tools exactly as they are">profile name</button>
+                    <button class="btn choice" type="button" aria-pressed="false" title="mount this project’s own declaration beside the profile one, under the local name p-grafana-local">this project’s copy as p-grafana-local</button>
+                    <button class="btn choice" type="button" aria-pressed="false" title="mount this project’s own declaration under the name it declares: it is the nearer one in this project, so it shadows the profile instance’s tools here while every other project keeps seeing them">this project’s declaration under its own name</button>
+                  </div>
+                </div>
+                <div class="note-error">
+                  <strong>context7</strong>
+                  <span class="tag warn">duplicate declaration</span>
+                  <div class="muted">"context7" is declared in 2 documents; ~/.dsh/mcp.json wins and the other declaration is not mounted.</div>
+                  <div class="hint">declared in ~/.dsh/mcp.json · /example/service/.dsh/mcp.json</div>
+                </div>
+                <div class="card" style="margin-top:16px">
+                  <div class="card-head">
+                    <span class="block-label">Tools</span>
+                    <span class="spacer"></span>
+                    <span class="count">4 · this session</span>
+                  </div>
+                  <div class="row" style="padding:4px 9px"><span class="name">mcp__tglider__workspace</span><span class="spacer"></span><button class="switch on" type="button" aria-checked="true" aria-label="mcp__tglider__workspace" title="Stop pinning this tool in every request of this project"><span class="switch-knob"></span></button></div>
+                  <div class="row" style="padding:4px 9px"><span class="name">mcp__tglider__catalog</span><span class="spacer"></span><button class="switch" type="button" aria-checked="false" aria-label="mcp__tglider__catalog" title="Keep this tool in every request of this project"><span class="switch-knob"></span></button></div>
+                  <div class="row" style="padding:4px 9px"><span class="name">mcp__context7__docs</span><span class="spacer"></span><button class="switch" type="button" aria-checked="false" aria-label="mcp__context7__docs" title="Keep this tool in every request of this project"><span class="switch-knob"></span></button></div>
+                  <div class="row" style="padding:4px 9px"><span class="name">mcp__grafana-local__query</span><span class="spacer"></span><button class="switch" type="button" aria-checked="false" aria-label="mcp__grafana-local__query" title="Keep this tool in every request of this project"><span class="switch-knob"></span></button></div>
+                  <div class="row" style="padding:4px 9px"><span class="hint">… 2 more hidden</span></div>
+                  <div class="hint" style="padding:4px 9px 7px">mcp__&lt;server&gt;__&lt;tool&gt; — the registry applies the prefix, not this page</div>
+                </div>
+                <div class="card">
+                  <div class="card-head">
+                    <span class="block-label">Request preview</span>
+                    <span class="spacer"></span>
+                    <span class="tag">tools[] = 3</span>
+                    <span class="tag">≈ 3200 tokens</span>
+                  </div>
+                  <pre class="json">mcp__tglider__workspace          pin
+mcp__context7__docs             context
+mcp__grafana-local__query       step 3</pre>
+                  <div class="hint" style="padding:4px 9px 7px">hidden 8600 · ≈ 2150 tokens saved</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="d-caption">
+      The editor is the only screen that writes to disk: a "list / form / JSON with diff" split;
+      a write always goes to the document the entry came from, through <code>.bak</code> and a
+      confirmation (<code>docs/design/contracts/write-path.md</code>). <code>Save…</code> opens the
+      confirmation, <code>Cancel</code> hides it.
+    </p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       §4 BOUNDARIES
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <section id="notes">
+    <h2>4. Differences and boundaries</h2>
+    <table class="d-table">
+      <thead>
+        <tr><th>What</th><th>Here</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>The block scheme and the copy</td>
+          <td>brought to one scheme (this is a design)</td>
+          <td>the product still prints the old strings: the session summary twice, the tool name both in the row and in its expansion, extra labels. The mock's fix runs ahead of the code fix — the divergence is closed in the next step, together with the <code>src/client/view.ts</code> fix. The zeroes are agreed: the header counters are chips, and an empty tier is drawn neither as a heading nor as a row (F-37)</td>
+        </tr>
+        <tr>
+          <td>The rows of the <code>hidden</code> tier (F-40)</td>
+          <td>a disclosure heading <code>▸ hidden</code> with a chip, under it the names as rows without a second level (<code>tool-line static</code>), like the pinned and counter ones</td>
+          <td>the product draws the same tier as a disclosure and the same list, but makes a name row an expanding button with <code>aria-expanded="false"</code> and the hint "show this tool’s registry name and how it was offered", with nothing to expand (<code>onToggle</code> is a stub): a press does nothing while the hint promises an expansion. Awaiting the <code>src/client/view.ts</code> fix — an idea in <code>docs/features.md</code></td>
+        </tr>
+        <tr>
+          <td>Tokens</td>
+          <td>a verbatim copy of the three design-system sheets</td>
+          <td>the page lives without a build and without the harness; names and values were not rewritten</td>
+        </tr>
+        <tr>
+          <td>Elements and order</td>
+          <td>the same as the client's</td>
+          <td>the bar, the blocks, the disclosures, the tool rows and the 12 px ladder — per <code>contracts/surfaces.md</code></td>
+        </tr>
+        <tr>
+          <td>Toasts</td>
+          <td>outside this interface design</td>
+          <td>the section is removed as redundant; the banner's shape lives in <code>src/client/toasts.ts</code> and did not change</td>
+        </tr>
+        <tr>
+          <td>The shell (sidebar, chat, settings dialog)</td>
+          <td>an approximation</td>
+          <td>the shell classes are hashed by the build, the shell components are outside this repository; sizes and tokens are taken from their CSS (sidebar 451 px — the width at which the live panel was measured; dialog 800×min(800px,100vh−48px), rail 188)</td>
+        </tr>
+        <tr>
+          <td><code>--dsw-font-mono</code></td>
+          <td>not declared</td>
+          <td>there is no such variable in the design system (there are <code>--dsw-font-family</code> and <code>--ds-font-family-code</code>): the mono stack always resolves to the fallback — here and in the client alike</td>
+        </tr>
+        <tr>
+          <td>The panel's font</td>
+          <td>inherits the shell's font (sans, 14 px)</td>
+          <td>mono only on names, times and chips, as in the client</td>
+        </tr>
+        <tr>
+          <td>Text sizes</td>
+          <td>relative <code>em</code> off the shell's type</td>
+          <td>same as in the client: a label 0.8 em, a fact 0.85 em, a row the base size</td>
+        </tr>
+        <tr>
+          <td>Fixture data</td>
+          <td>the <code>/example/service</code> project, 7 servers, 4 events</td>
+          <td>matches the <code>scripts/design-parity.mjs</code> gate's fixture, so the mock and the machine checks speak about one thing</td>
+        </tr>
+        <tr>
+          <td>The server rows of the <code>Tools</code> page (F-44)</td>
+          <td>the server name on the left, the transport and the server's toggle on the right</td>
+          <td>the product keeps a <code>Server</code> label on the left with the offering phrase
+              (<code>1 of 3 tools offered directly</code>) and puts the name on the right, next to
+              the toggle (<code>STYLE.settingRowControl</code>, gap 6 px). A divergence in the
+              stand's own layout, also recorded in <code>docs/design/README.md</code> §4</td>
+        </tr>
+        <tr>
+          <td>The tools filter bar (F-43)</td>
+          <td>present in the <code>full</code> state: a query field, <code>Clear</code>, a note and four
+              tier chips that really filter the list (a query by name, a tier on press, the
+              <code>hidden</code> tier opens by itself)</td>
+          <td>the tab's other states (<code>quiet</code>, <code>mode-direct</code>) are brief retellings
+              of their cases and lag not only here: <code>mode-direct</code> prints the line
+              "1 pinned · 0 disclosed · 0 hidden" in the tools block instead of the chips (pre-F-37).
+              The numbers and the bar's shape — per <code>contracts/surfaces.md</code> §1.5</td>
+        </tr>
+        <tr>
+          <td>Call counters (F-32)</td>
+          <td>absent from this file</td>
+          <td>here the product ran ahead of the mock, not the other way around: a tool row prints <code>{n} calls</code> or <code>never called</code>, a quiet server — <code>idle {n}d</code>, and the pin picker sorts by frequency, all from the host's <code>ProjectSnapshot.usage</code> (<code>src/types.ts:335-347</code>), which the mock does not have. Porting it into the mock is a separate step of work</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+// Theme: the same contract as the harness — an attribute on <body>.
+const themeToggle = document.getElementById('theme-toggle')
+function paintTheme() {
+  themeToggle.textContent = document.body.hasAttribute('data-ds-dark-theme') ? 'Theme: dark' : 'Theme: light'
+}
+themeToggle.addEventListener('click', () => {
+  if (document.body.hasAttribute('data-ds-dark-theme')) document.body.removeAttribute('data-ds-dark-theme')
+  else document.body.setAttribute('data-ds-dark-theme', '')
+  paintTheme()
+})
+paintTheme()
+
+// The hash addresses a theme and a section: `harness.html#light,settings`.
+const hashTokens = location.hash.slice(1).split(',').map((token) => token.trim()).filter(Boolean)
+if (hashTokens.includes('light')) document.body.removeAttribute('data-ds-dark-theme')
+if (hashTokens.includes('dark')) document.body.setAttribute('data-ds-dark-theme', '')
+paintTheme()
+for (const token of hashTokens) {
+  const section = document.getElementById(token)
+  if (section) { section.scrollIntoView(); break }
+}
+
+// Disclosures: the marker and the hidden body — the same behaviour as the component's.
+// The state is set by a function, so a deep link (`#tab,logs`) can land on it too.
+function setDisclosure(name, open) {
+  const head = document.querySelector('[data-disclosure="' + name + '"]')
+  const body = document.querySelector('[data-disclosure-body="' + name + '"]')
+  if (!head) return
+  head.setAttribute('aria-expanded', String(open))
+  if (body) body.hidden = !open
+  const marker = head.querySelector('.mk')
+  if (marker) marker.textContent = open ? '▾ ' : '▸ '
+}
+for (const head of document.querySelectorAll('[data-disclosure]')) {
+  head.addEventListener('click', () => {
+    setDisclosure(head.getAttribute('data-disclosure'), head.getAttribute('aria-expanded') !== 'true')
+  })
+}
+
+// A tool row's expansion: only what the row does not carry (via · step · time).
+function setTool(name, open) {
+  const line = document.querySelector('[data-tool="' + name + '"]')
+  const detail = document.querySelector('[data-tool-detail="' + name + '"]')
+  if (!line || !detail) return
+  line.setAttribute('aria-expanded', String(open))
+  detail.hidden = !open
+}
+for (const line of document.querySelectorAll('[data-tool]')) {
+  line.addEventListener('click', () => {
+    setTool(line.getAttribute('data-tool'), line.getAttribute('aria-expanded') !== 'true')
+  })
+}
+
+// The tools filter (F-43): the same query and the same tier switch as the
+// product's (`matchesToolQuery`, `ToolsView`). A query is a case-insensitive
+// substring of the registry name; a pressed chip keeps one tier, pressing it
+// again brings them all back (an empty pressed list is "all tiers"); with an
+// active filter the `hidden` tier opens by itself and its chip counts what is
+// under it.
+const toolFilter = document.querySelector('[data-tool-filter]')
+const toolFilterClear = document.querySelector('[data-tool-filter-clear]')
+const toolFilterNote = document.querySelector('[data-tool-filter-note]')
+// The user's choice on the `hidden` tier: `null` — nobody has pressed the head.
+let hiddenChosen = null
+const toolTiers = [...document.querySelectorAll('[data-tier-chip]')]
+const toolNodes = [...document.querySelectorAll('[data-tier]')]
+const toolRows = [...document.querySelectorAll('[data-name]')]
+const tierNameOf = (chip) => chip.getAttribute('data-tier-chip')
+function matchesToolQuery(name, query) {
+  const needle = query.trim().toLowerCase()
+  return needle === '' || name.toLowerCase().includes(needle)
+}
+function applyToolFilter() {
+  if (!toolFilter) return
+  const query = toolFilter.value
+  const pressed = toolTiers.filter((chip) => chip.getAttribute('aria-pressed') === 'true').map(tierNameOf)
+  const active = query.trim() !== '' || pressed.length > 0
+  const tierPasses = (tier) => pressed.length === 0 || pressed.includes(tier)
+  // A name row passes by the query; a group heading and a tier disclosure — by
+  // their own rows: a heading over an empty list is not drawn (F-37).
+  for (const row of toolRows) {
+    row.hidden = !(tierPasses(row.getAttribute('data-tier')) && matchesToolQuery(row.getAttribute('data-name'), query))
+  }
+  for (const node of toolNodes) {
+    if (node.hasAttribute('data-name')) continue
+    const tier = node.getAttribute('data-tier')
+    const names = node.hasAttribute('data-names')
+      ? node.getAttribute('data-names').split(/\s+/).filter(Boolean)
+      : null
+    const own = names === null
+      ? toolRows.some((row) => row.getAttribute('data-tier') === tier && !row.hidden)
+      : names.some((name) => matchesToolQuery(name, query))
+    node.hidden = !(tierPasses(tier) && own)
+  }
+  // Inside the opened `hidden` tier the server groups print what is under
+  // them: a name whose group the filter dropped is not drawn.
+  for (const group of document.querySelectorAll('[data-hidden-group]')) {
+    const kept = group.getAttribute('data-names').split(/\s+/).filter((name) => matchesToolQuery(name, query))
+    for (const row of group.querySelectorAll('[data-name]')) {
+      row.hidden = !kept.includes(row.getAttribute('data-name'))
+    }
+    const counter = group.querySelector('[data-hidden-group-count]')
+    if (counter) counter.textContent = String(kept.length)
+    // A server heading over an empty list is not drawn — as in the product.
+    group.hidden = kept.length === 0
+  }
+  const tierCount = document.querySelector('[data-hidden-count]')
+  if (tierCount) {
+    tierCount.textContent = String(toolRows.filter((row) => row.getAttribute('data-tier') === 'hidden' && !row.hidden).length)
+  }
+  const shown = toolRows.filter((row) => !row.hidden).length
+  const hiddenTier = document.querySelector('[data-hidden-tier]')
+  if (hiddenTier) {
+    const body = hiddenTier.querySelector('[data-disclosure-body]')
+    const head = hiddenTier.querySelector('.disclosure-head')
+    // Three states, like the product's `openHidden`: until the head is pressed
+    // (`null`), the filter itself opens the tier, and a user's press wins —
+    // and survives the filter being lifted, so `Clear` does not reopen a tier
+    // closed by hand.
+    const want = hiddenChosen === null ? active : hiddenChosen
+    if (body.hidden === want) {
+      body.hidden = !want
+      if (head) head.setAttribute('aria-expanded', String(want))
+    }
+  }
+  if (toolFilterClear) toolFilterClear.hidden = !active
+  if (toolFilterNote) {
+    toolFilterNote.hidden = !active
+    toolFilterNote.textContent = active
+      ? shown === 0
+        ? 'No tool of this session matches the filter.'
+        : `showing ${shown} of ${toolRows.length}`
+      : ''
+  }
+}
+for (const chip of toolTiers) {
+  chip.addEventListener('click', () => {
+    chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')
+    chip.classList.toggle('on', chip.getAttribute('aria-pressed') === 'true')
+    applyToolFilter()
+  })
+}
+const hiddenHead = document.querySelector('[data-hidden-tier] .disclosure-head')
+if (hiddenHead) {
+  // The disclosure's own handler has already flipped the state — this one is
+  // registered later, so it reads its result and remembers it as the user's choice.
+  hiddenHead.addEventListener('click', () => {
+    const body = document.querySelector('[data-disclosure-body="tools-hidden"]')
+    hiddenChosen = body !== null && !body.hidden
+    applyToolFilter()
+  })
+}
+if (toolFilter) toolFilter.addEventListener('input', applyToolFilter)
+if (toolFilterClear) {
+  toolFilterClear.addEventListener('click', () => {
+    toolFilter.value = ''
+    for (const chip of toolTiers) {
+      chip.setAttribute('aria-pressed', 'false')
+      chip.classList.remove('on')
+    }
+    applyToolFilter()
+  })
+}
+applyToolFilter()
+
+// The tab's states.
+const tabButtons = document.querySelectorAll('[data-tab-state]')
+const tabVariants = document.querySelectorAll('[data-tab-variant]')
+for (const button of tabButtons) {
+  button.addEventListener('click', () => {
+    const state = button.getAttribute('data-tab-state')
+    for (const other of tabButtons) other.classList.toggle('on', other === button)
+    for (const variant of tabVariants) variant.hidden = variant.getAttribute('data-tab-variant') !== state
+  })
+}
+
+// The settings page's views: one page, four bodies.
+const viewButtons = document.querySelectorAll('[data-settings-view]')
+const viewBodies = document.querySelectorAll('[data-settings-body]')
+const pageButtons = document.querySelectorAll('[data-page]')
+const viewSwitch = document.querySelector('[data-view-switch]')
+const jsonToggle = document.querySelector('[data-json-toggle]')
+const jsonPreview = document.querySelector('[data-json-preview]')
+const viewSegments = document.querySelectorAll('[data-view-switch] [data-view]')
+function showSettings(mode) {
+  for (const rest of viewButtons) rest.classList.toggle('on', rest.getAttribute('data-settings-view') === mode)
+  for (const body of viewBodies) body.hidden = body.getAttribute('data-settings-body') !== mode
+  const isTools = mode === 'tools'
+  for (const rest of pageButtons) {
+    const active = rest.getAttribute('data-page') === (isTools ? 'tools' : 'servers')
+    rest.classList.toggle('on', active)
+    rest.setAttribute('aria-pressed', String(active))
+  }
+  if (viewSwitch) viewSwitch.hidden = isTools
+  if (jsonToggle) jsonToggle.hidden = isTools
+  if (jsonPreview) jsonPreview.hidden = mode !== 'table' || jsonToggle.getAttribute('aria-pressed') !== 'true'
+  for (const segment of viewSegments) {
+    const active = segment.getAttribute('data-view') === (mode === 'files' ? 'files' : 'table')
+    segment.classList.toggle('on', active)
+    segment.setAttribute('aria-pressed', String(active))
+  }
+}
+for (const button of viewButtons) {
+  button.addEventListener('click', () => showSettings(button.getAttribute('data-settings-view')))
+}
+for (const button of pageButtons) {
+  button.addEventListener('click', () => showSettings(button.getAttribute('data-page') === 'tools' ? 'tools' : 'table'))
+}
+for (const segment of viewSegments) {
+  segment.addEventListener('click', () => showSettings(segment.getAttribute('data-view')))
+}
+if (jsonToggle) {
+  jsonToggle.addEventListener('click', () => {
+    const on = jsonToggle.getAttribute('aria-pressed') === 'true'
+    jsonToggle.setAttribute('aria-pressed', String(!on))
+    jsonToggle.textContent = on ? 'Show JSON' : 'Hide JSON'
+    showSettings(document.querySelector('[data-settings-view].on').getAttribute('data-settings-view'))
+  })
+}
+showSettings('table')
+
+// A deep link sets a state too, not only a theme and a section:
+// `harness.html#dark,tab,logs`, `#light,settings,tools`, `#dark,tab,problems`.
+for (const token of hashTokens) {
+  if (token === 'logs') setDisclosure('logs', true)
+  if (token === 'problems') setDisclosure('errors', true)
+  if (token === 'sessions') setDisclosure('sessions', true)
+  if (token === 'tools') showSettings('tools')
+  if (token === 'files') showSettings('files')
+  if (token === 'editor') showSettings('editor')
+  if (token === 'tool-open') setTool('disclosed-grafana', true)
+}
+
+// The write confirmation.
+const save = document.querySelector('[data-save]')
+const confirm = document.querySelector('[data-confirm]')
+const cancel = document.querySelector('[data-cancel]')
+if (save && confirm) save.addEventListener('click', () => { confirm.hidden = false })
+if (cancel && confirm) cancel.addEventListener('click', () => { confirm.hidden = true })
+</script>
+</body>
+</html>

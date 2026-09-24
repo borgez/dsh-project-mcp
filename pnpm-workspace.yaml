@@ -1,0 +1,25 @@
+# node-pty arrives transitively through the `dsh-better-sidebar` devDependency
+# (used for its client types and the optional peer). This repo never runs the
+# sidebar's terminal, so its native build script is not needed here; the profile
+# install under `~/.dsh/profiles/web` builds it for real.
+allowBuilds:
+  node-pty: false
+minimumReleaseAgeExclude:
+  - '@deepseek-ai/dsh-attachment@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-brand@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-http-proxy@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-invariants@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-llm@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-mcp-client@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-ptc-runtime@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-sandbox-policy@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-sandbox@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-scope@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-subprocess@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-system-prompt@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-timeout@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-tools@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-typert-protocol@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-user-approval@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-util-crypto@0.1.6-alpha.2'
+  - '@deepseek-ai/dsh-util-values@0.1.6-alpha.2'

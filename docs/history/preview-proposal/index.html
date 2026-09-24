@@ -1,0 +1,1177 @@
+<!doctype html>
+<!--
+  Archived record — kept for decisions, not a contract. Do not extend; the live
+  docs are docs/… (as of F-49).
+  The F-33…F-36 labels inside this file are informal and were never registered
+  in docs/features.md (its F-34 collides with the registry's F-34). If this
+  proposal is ever approved, the units take fresh numbers, not these.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-project-mcp — превью предложения F-33…F-36</title>
+<!--
+  Самодостаточное превью предложенного варианта дизайна (панель наблюдения).
+  Это не утверждённый макет: утверждённая картинка — docs/design/mockups/harness.html.
+  Что здесь показано — дельта поверх текущего контракта:
+    F-33 пульс «connecting», пороги бюджета, skeleton, пунктирные пустые состояния
+    F-34 фильтры логов: серверы, поиск, follow, копия строки
+    F-35 поиск пинов, сортировка таблицы, дифф черновика против документа
+    F-36 группировка повторных тостов
+  Токены — дословная копия трёх листов дизайн-системы DSH (та же вырезка, что в harness.html);
+  словарь классов (.row, .dot, .tag, .chip, .btn, .disclosure-*, .tool-*) — тот же.
+  `--dsw-font-mono` в харнессе не существует: фоллбэк ui-monospace, как в клиенте.
+-->
+<style>
+   1. ТОКЕНЫ — дословно из design-platform.css (строки 4–346)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Figma font-weight 510 (an SF Pro variable-font weight) always renders as
+   font-weight: 500 in this UI — non-variable webfonts snap intermediate
+   weights unpredictably across platforms. */
+body {
+  --dsw-static-amber-100: rgb(254, 245, 231);
+  --dsw-static-amber-400: rgb(247, 173, 49);
+  --dsw-static-amber-500: rgb(245, 158, 11);
+  --dsw-static-amber-600: rgb(221, 134, 41);
+  --dsw-static-amber-900: rgb(39, 36, 31);
+  --dsw-static-blue-100: rgb(219, 234, 254);
+  --dsw-static-blue-300: rgb(147, 197, 253);
+  --dsw-static-blue-400: rgb(96, 165, 250);
+  --dsw-static-blue-450: rgb(77, 147, 248);
+  --dsw-static-blue-500: rgb(59, 130, 246);
+  --dsw-static-blue-50: rgb(239, 246, 255);
+  --dsw-static-blue-50p: rgb(234, 243, 255);
+  --dsw-static-blue-600: rgb(37, 99, 235);
+  --dsw-static-blue-75: rgb(229, 240, 255);
+  --dsw-static-blue-800: rgb(30, 64, 175);
+  --dsw-static-blue-900: rgb(14, 48, 116);
+  --dsw-static-blue-950: rgb(23, 37, 84);
+  --dsw-static-deepseek-100: rgb(228, 237, 253);
+  --dsw-static-deepseek-200: rgb(211, 226, 255);
+  --dsw-static-deepseek-300: rgb(183, 200, 254);
+  --dsw-static-deepseek-400: rgb(103, 158, 254);
+  --dsw-static-deepseek-450: rgb(86, 134, 254);
+  --dsw-static-deepseek-500: rgb(65, 118, 230);
+  --dsw-static-deepseek-50: rgb(237, 243, 254);
+  --dsw-static-deepseek-600: rgb(72, 104, 178);
+  --dsw-static-deepseek-700-delete: rgb(47, 76, 143);
+  --dsw-static-deepseek-800: rgb(52, 65, 91);
+  --dsw-static-deepseek-900: rgb(40, 49, 66);
+  --dsw-static-green-100: rgb(230, 250, 237);
+  --dsw-static-green-400: rgb(78, 209, 126);
+  --dsw-static-green-500: rgb(34, 197, 94);
+  --dsw-static-green-900: rgb(35, 60, 44);
+  --dsw-static-neutral-00: rgb(255, 255, 255);
+  --dsw-static-neutral-1000: rgb(0, 0, 0);
+  --dsw-static-neutral-100: rgb(245, 245, 245);
+  --dsw-static-neutral-150: rgb(237, 237, 237);
+  --dsw-static-neutral-200: rgb(229, 229, 229);
+  --dsw-static-neutral-250: rgb(220, 220, 220);
+  --dsw-static-neutral-300: rgb(212, 212, 212);
+  --dsw-static-neutral-400: rgb(162, 164, 166);
+  --dsw-static-neutral-500: rgb(127, 130, 135);
+  --dsw-static-neutral-50: rgb(250, 250, 250);
+  --dsw-static-neutral-550: rgb(101, 103, 107);
+  --dsw-static-neutral-600: rgb(84, 85, 87);
+  --dsw-static-neutral-700: rgb(60, 60, 61);
+  --dsw-static-neutral-800: rgb(41, 41, 41);
+  --dsw-static-neutral-850: rgb(33, 33, 35);
+  --dsw-static-neutral-900: rgb(15, 15, 15);
+  --dsw-static-neutral-bluish-00: rgb(255, 255, 255);
+  --dsw-static-neutral-bluish-1000: rgb(15, 17, 21);
+  --dsw-static-neutral-bluish-100: rgb(235, 238, 242);
+  --dsw-static-neutral-bluish-150: rgb(233, 236, 242);
+  --dsw-static-neutral-bluish-200: rgb(225, 229, 238);
+  --dsw-static-neutral-bluish-300: rgb(207, 211, 214);
+  --dsw-static-neutral-bluish-400: rgb(173, 178, 184);
+  --dsw-static-neutral-bluish-500: rgb(151, 157, 166);
+  --dsw-static-neutral-bluish-50: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-600: rgb(129, 133, 140);
+  --dsw-static-neutral-bluish-60: rgb(245, 246, 247);
+  --dsw-static-neutral-bluish-700: rgb(97, 102, 107);
+  --dsw-static-neutral-bluish-750: rgb(67, 69, 74);
+  --dsw-static-neutral-bluish-75: rgb(241, 243, 245);
+  --dsw-static-neutral-bluish-800: rgb(53, 54, 56);
+  --dsw-static-neutral-bluish-850: rgb(44, 44, 46);
+  --dsw-static-neutral-bluish-875: rgb(35, 35, 36);
+  --dsw-static-neutral-bluish-900: rgb(27, 27, 28);
+  --dsw-static-neutral-bluish-950: rgb(21, 21, 23);
+  --dsw-static-red-100: rgb(254, 226, 226);
+  --dsw-static-red-400: rgb(242, 90, 90);
+  --dsw-static-red-500: rgb(239, 68, 68);
+  --dsw-static-red-50: rgb(254, 242, 242);
+  --dsw-static-red-600: rgb(236, 19, 19);
+  --dsw-static-red-900: rgb(87, 12, 12);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-static-amber-100: rgb(254, 245, 231);
+  --dsw-static-amber-400: rgb(247, 173, 49);
+  --dsw-static-amber-500: rgb(245, 158, 11);
+  --dsw-static-amber-600: rgb(221, 134, 41);
+  --dsw-static-amber-900: rgb(39, 36, 31);
+  --dsw-static-blue-100: rgb(219, 234, 254);
+  --dsw-static-blue-300: rgb(147, 197, 253);
+  --dsw-static-blue-400: rgb(96, 165, 250);
+  --dsw-static-blue-450: rgb(77, 147, 248);
+  --dsw-static-blue-500: rgb(59, 130, 246);
+  --dsw-static-blue-50: rgb(239, 246, 255);
+  --dsw-static-blue-50p: rgb(234, 243, 255);
+  --dsw-static-blue-600: rgb(37, 99, 235);
+  --dsw-static-blue-75: rgb(229, 240, 255);
+  --dsw-static-blue-800: rgb(30, 64, 175);
+  --dsw-static-blue-900: rgb(14, 48, 116);
+  --dsw-static-blue-950: rgb(23, 37, 84);
+  --dsw-static-deepseek-100: rgb(228, 237, 253);
+  --dsw-static-deepseek-200: rgb(211, 226, 255);
+  --dsw-static-deepseek-300: rgb(183, 200, 254);
+  --dsw-static-deepseek-400: rgb(103, 158, 254);
+  --dsw-static-deepseek-450: rgb(86, 134, 254);
+  --dsw-static-deepseek-500: rgb(65, 118, 230);
+  --dsw-static-deepseek-50: rgb(237, 243, 254);
+  --dsw-static-deepseek-600: rgb(72, 104, 178);
+  --dsw-static-deepseek-700-delete: rgb(47, 76, 143);
+  --dsw-static-deepseek-800: rgb(52, 65, 91);
+  --dsw-static-deepseek-900: rgb(40, 49, 66);
+  --dsw-static-green-100: rgb(230, 250, 237);
+  --dsw-static-green-400: rgb(78, 209, 126);
+  --dsw-static-green-500: rgb(34, 197, 94);
+  --dsw-static-green-900: rgb(35, 60, 44);
+  --dsw-static-neutral-00: rgb(255, 255, 255);
+  --dsw-static-neutral-1000: rgb(0, 0, 0);
+  --dsw-static-neutral-100: rgb(245, 245, 245);
+  --dsw-static-neutral-150: rgb(237, 237, 237);
+  --dsw-static-neutral-200: rgb(229, 229, 229);
+  --dsw-static-neutral-250: rgb(220, 220, 220);
+  --dsw-static-neutral-300: rgb(212, 212, 212);
+  --dsw-static-neutral-400: rgb(162, 164, 166);
+  --dsw-static-neutral-500: rgb(127, 130, 135);
+  --dsw-static-neutral-50: rgb(250, 250, 250);
+  --dsw-static-neutral-550: rgb(101, 103, 107);
+  --dsw-static-neutral-600: rgb(84, 85, 87);
+  --dsw-static-neutral-700: rgb(60, 60, 61);
+  --dsw-static-neutral-800: rgb(41, 41, 41);
+  --dsw-static-neutral-850: rgb(33, 33, 35);
+  --dsw-static-neutral-900: rgb(15, 15, 15);
+  --dsw-static-neutral-bluish-00: rgb(255, 255, 255);
+  --dsw-static-neutral-bluish-1000: rgb(15, 17, 21);
+  --dsw-static-neutral-bluish-100: rgb(235, 238, 242);
+  --dsw-static-neutral-bluish-150: rgb(233, 236, 242);
+  --dsw-static-neutral-bluish-200: rgb(225, 229, 238);
+  --dsw-static-neutral-bluish-300: rgb(207, 211, 214);
+  --dsw-static-neutral-bluish-400: rgb(173, 178, 184);
+  --dsw-static-neutral-bluish-500: rgb(151, 157, 166);
+  --dsw-static-neutral-bluish-50: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-600: rgb(129, 133, 140);
+  --dsw-static-neutral-bluish-60: rgb(249, 250, 251);
+  --dsw-static-neutral-bluish-700: rgb(97, 102, 107);
+  --dsw-static-neutral-bluish-750: rgb(67, 69, 74);
+  --dsw-static-neutral-bluish-75: rgb(241, 243, 245);
+  --dsw-static-neutral-bluish-800: rgb(53, 54, 56);
+  --dsw-static-neutral-bluish-850: rgb(44, 44, 46);
+  --dsw-static-neutral-bluish-875: rgb(35, 35, 36);
+  --dsw-static-neutral-bluish-900: rgb(27, 27, 28);
+  --dsw-static-neutral-bluish-950: rgb(21, 21, 23);
+  --dsw-static-red-100: rgb(254, 226, 226);
+  --dsw-static-red-400: rgb(242, 90, 90);
+  --dsw-static-red-500: rgb(239, 68, 68);
+  --dsw-static-red-50: rgb(254, 242, 242);
+  --dsw-static-red-600: rgb(236, 19, 19);
+  --dsw-static-red-900: rgb(87, 12, 12);
+}
+
+body {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-document-preview: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-label-document-preview: var(--dsw-static-neutral-bluish-200);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24);
+  --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.12);
+  --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);
+  --dsw-alias-bg-mask-photo: rgba(0, 0, 0, 0.88);
+  --dsw-alias-bg-mask-drop: rgba(255, 255, 255, 0.7);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-bg-multi-select: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-150);
+  --dsw-alias-bg-skeleton: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-inverted2: rgba(0, 0, 0, 0);
+  --dsw-alias-border-inverted: rgba(0, 0, 0, 0);
+  --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-l2-darkmode-thin: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
+  --dsw-alias-border-l4: rgba(0, 0, 0, 0.16);
+  --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: rgb(65, 118, 230);
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-button-contrast-fill: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-button-elevated-fill: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-floating-hover: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-button-ghost-active-border: var(--dsw-static-neutral-bluish-500);
+  --dsw-alias-button-ghost-active-fill: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-ghost-active-hover: var(--dsw-static-neutral-bluish-150);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(31, 31, 31, 0.36);
+  --dsw-alias-button-tool-bar-fill: rgba(84, 85, 87, 0.5);
+  --dsw-alias-button-tool-bar-hover: rgba(84, 85, 87, 0.6);
+  --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
+  --dsw-alias-interactive-bg-hover-accent: rgba(38, 49, 72, 0.14);
+  --dsw-alias-interactive-bg-hover-danger: rgba(236, 19, 19, 0.05);
+  --dsw-alias-interactive-bg-hover-solid: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-label-caption: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-200);
+  --dsw-alias-label-primary-bluish: var(--dsw-static-blue-900);
+  --dsw-alias-label-primary-dimmed: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-primary-inverted: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-link: var(--dsw-static-deepseek-500);
+  --dsw-alias-markdown-citation: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-markdown-code-block-banner: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-markdown-code-block: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-markdown-code-segment-selected: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-markdown-code-segment-unselected: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-50);
+  --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-60);
+  --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-200);
+  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-200);
+  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-300);
+  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-300);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-500);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-100);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-600);
+  --dsw-alias-state-error-secondary: var(--dsw-static-red-400);
+  --dsw-alias-state-success-primary: var(--dsw-static-green-500);
+  --dsw-alias-state-success-secondary: var(--dsw-static-green-400);
+  --dsw-alias-state-success-tertiary: var(--dsw-static-green-100);
+  --dsw-alias-state-warn-label: var(--dsw-static-amber-600);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-100);
+  --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-bubble-highlight: var(--dsw-static-deepseek-200);
+  --dsw-specific-bubble: var(--dsw-static-deepseek-50);
+  --dsw-specific-input-major: var(--dsw-static-neutral-bluish-00);
+  --dsw-specific-login-input: var(--dsw-static-neutral-bluish-50);
+  --dsw-specific-menu: var(--dsw-alias-bg-layer-3);
+  --dsw-specific-selector: var(--dsw-static-neutral-bluish-60);
+  --dsw-specific-sidebar-fill: var(--dsw-static-neutral-bluish-50);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-deepseek-100);
+  --dsw-specific-sidebar-nav-item-active: var(--dsw-static-neutral-bluish-100);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-75);
+  --dsw-specific-tip: var(--dsw-static-neutral-bluish-60);
+
+  background-color: var(--dsw-alias-bg-base);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-bg-document-preview: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-label-document-preview: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
+  --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.2);
+  --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);
+  --dsw-alias-bg-mask-photo: rgba(0, 0, 0, 0.88);
+  --dsw-alias-bg-mask-drop: rgba(39, 39, 48, 0.7);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-multi-select: var(--dsw-static-neutral-850);
+  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
+  --dsw-alias-border-inverted2: rgba(255, 255, 255, 0.08);
+  --dsw-alias-border-inverted: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-border-l4: rgba(255, 255, 255, 0.2);
+  --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-brand-primary-new-colorprimary-new-color: var(--dsw-static-deepseek-450);
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-button-contrast-fill: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-button-elevated-fill: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-button-floating-hover: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-button-ghost-active-border: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-button-ghost-active-fill: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-ghost-active-hover: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(31, 31, 31, 0.36);
+  --dsw-alias-button-tool-bar-fill: rgba(84, 85, 87, 0.5);
+  --dsw-alias-button-tool-bar-hover: rgba(84, 85, 87, 0.6);
+  --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+  --dsw-alias-interactive-bg-hover-accent: rgba(255, 255, 255, 0.24);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, 0.15);
+  --dsw-alias-interactive-bg-hover-solid: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-label-caption: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-label-primary-bluish: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-primary-dimmed: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-primary-inverted: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-link: var(--dsw-static-deepseek-400);
+  --dsw-alias-markdown-citation: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-markdown-code-block-banner: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-code-block: var(--dsw-static-neutral-bluish-900);
+  --dsw-alias-markdown-code-segment-selected: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-markdown-code-segment-unselected: var(--dsw-static-neutral-bluish-900);
+  --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-800);
+  --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-700);
+  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-600);
+  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-600);
+  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-550);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-400);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-800);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-400);
+  --dsw-alias-state-error-secondary: var(--dsw-static-red-400);
+  --dsw-alias-state-success-primary: var(--dsw-static-green-500);
+  --dsw-alias-state-success-secondary: var(--dsw-static-green-400);
+  --dsw-alias-state-success-tertiary: var(--dsw-static-green-900);
+  --dsw-alias-state-warn-label: var(--dsw-static-amber-600);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-900);
+  --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-bubble-highlight: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-bubble: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-input-major: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-login-input: var(--dsw-static-neutral-bluish-900);
+  --dsw-specific-menu: var(--dsw-alias-bg-layer-3);
+  --dsw-specific-selector: var(--dsw-static-neutral-bluish-800);
+  --dsw-specific-sidebar-fill: var(--dsw-static-neutral-bluish-900);
+  --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-neutral-bluish-800);
+  --dsw-specific-sidebar-nav-item-active: var(--dsw-static-neutral-bluish-750);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-tip: var(--dsw-static-neutral-bluish-800);
+}
+
+/* base.css */
+:root {
+  --dsw-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --ds-font-family-code: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
+    'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei';
+  --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-transition-duration: 0.2s;
+  --ds-transition-duration-fast: 0.1s;
+  --ds-transition-duration-slow: 0.3s;
+}
+
+/* gradient-shadow-text.css — только то, что читает этот макет */
+body {
+  --dsw-linear-gradient-think: linear-gradient(180deg, #fff 20.19%, rgba(255, 255, 255, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #f5f6f7 20.19%, rgba(245, 246, 247, 0) 100%);
+  --dsw-shadow-lv1: 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+  --dsw-shadow-lv1-blur: 0 4px 12px 0 rgba(0, 0, 0, 0.02);
+  --dsw-shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  --dsw-shadow-lv3:
+    0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l4);
+  --dsw-mask-blur: blur(2px);
+}
+
+body[data-ds-dark-theme] {
+  --dsw-linear-gradient-think: linear-gradient(180deg, #151517 20.19%, rgba(21, 21, 23, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #232325 20.19%, rgba(35, 35, 37, 0) 100%);
+}
+
+body,
+body * {
+  --dsw-elevation-stroke: 0 0 0 0.5px var(--dsw-elevation-stroke-color);
+  --dsw-elevation-panel:
+    var(--dsw-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.03), 0 0 16px 0 rgba(0, 0, 0, 0.02);
+  --dsw-elevation-prominent:
+    var(--dsw-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.04), 0 0 20px 0 rgba(0, 0, 0, 0.05);
+  --dsw-elevation-soft:
+    var(--dsw-elevation-stroke), 0 4px 16px 0 rgba(0, 0, 0, 0.03), 0 0 24px 0 rgba(0, 0, 0, 0.03);
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   СЛОВАРЬ ПРИМИТИВОВ — тот же, что в harness.html: одна схема для всех поверхностей
+   ───────────────────────────────────────────────────────────────────────── */
+
+.panel-bar { display: flex; align-items: baseline; gap: 6px; padding: 7px 9px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); flex-wrap: wrap; }
+.body { min-height: 0; overflow: auto; padding: 9px 10px; }
+.body.scroll { flex: 1; }
+.body > .block:not(:first-child), .body > .disclosure:not(:first-child) { margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.spacer { flex: 1; }
+
+.block-head, .toolbar { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.block-head { justify-content: flex-start; }
+.toolbar { align-items: center; }
+.block-label, .group { color: var(--dsw-alias-label-tertiary, #81858c);
+  font-size: .8em; letter-spacing: .08em; text-transform: uppercase; }
+.group { margin: 7px 0 1px; font-size: .75em; opacity: .85; }
+.count { color: var(--dsw-alias-label-tertiary, #81858c); font-size: .85em; }
+
+.row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; flex-wrap: wrap; }
+.row.quiet { opacity: .6; }
+.plain { padding: 0; border: none; background: transparent; color: inherit;
+  cursor: pointer; font: inherit; text-align: left; }
+.name { font-family: var(--dsw-font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.name.on { color: var(--dsw-alias-state-business-primary, inherit); }
+.muted { color: var(--dsw-alias-label-secondary, inherit); }
+.dim { color: var(--dsw-alias-label-tertiary, #81858c); }
+.hint { color: var(--dsw-alias-label-tertiary, #81858c); font-size: .85em;
+  overflow-wrap: anywhere; max-width: 72ch; }
+.empty-title { color: var(--dsw-alias-label-primary, inherit); opacity: .9; }
+
+.detail { margin: 1px 0 3px; padding-left: 12px; margin-left: 0;
+  border-left: 2px solid var(--dsw-alias-border-l2, rgba(127,127,127,.4));
+  color: var(--dsw-alias-label-primary, inherit); opacity: .8;
+  font-size: .85em; overflow-wrap: anywhere; white-space: pre-wrap; }
+.detail.error { border-left-color: var(--dsw-alias-state-error-primary, #ec1313); }
+.warn { margin: 8px 0; padding: 5px 7px;
+  border-left: 2px solid var(--dsw-alias-state-warn-primary, #f59e0b);
+  background: var(--dsw-alias-state-warn-tertiary, transparent);
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: .85em; overflow-wrap: anywhere; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  flex: none; align-self: center; }
+.s-active { background: var(--dsw-alias-state-success-primary, #22c55e); }
+.s-warn { background: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.s-error { background: var(--dsw-alias-state-error-primary, #ec1313); }
+.s-idle { background: var(--dsw-alias-label-tertiary, #81858c); }
+.c-active { color: var(--dsw-alias-state-success-primary, #22c55e); }
+.c-warn { color: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.c-error { color: var(--dsw-alias-state-error-primary, #ec1313); }
+.c-idle { color: var(--dsw-alias-label-tertiary, #81858c); }
+
+.tag { background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,.12));
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: .85em; border-radius: 4px; padding: 0 5px;
+  color: var(--dsw-alias-label-secondary, inherit); white-space: nowrap; }
+.tag.warn { color: var(--dsw-alias-state-error-primary, #ec1313); }
+.tag.quiet { color: var(--dsw-alias-label-tertiary, #81858c); }
+.chip { border: none; cursor: pointer; font: inherit;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: .85em; border-radius: 4px; padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,.12));
+  color: var(--dsw-alias-label-secondary, inherit); }
+.chip.on { background: var(--dsw-alias-interactive-bg-active, rgba(127,127,127,.18));
+  color: var(--dsw-alias-label-primary, inherit); }
+.btn { padding: 2px 8px; border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.btn:disabled { cursor: default; opacity: .6; }
+
+.disclosure-head { display: flex; align-items: baseline; gap: 6px; width: 100%;
+  padding: 0; border: none; background: transparent; font: inherit; text-align: left;
+  cursor: pointer; color: var(--dsw-alias-label-tertiary, #81858c);
+  font-size: .8em; letter-spacing: .08em; text-transform: uppercase; }
+.disclosure-body { padding-top: 4px; }
+.tool { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.tool-line { display: flex; align-items: baseline; gap: 6px; flex: 1; min-width: 0;
+  padding: 2px 0; border: none; background: transparent; color: inherit;
+  cursor: pointer; font: inherit; text-align: left; }
+.tool-line.static { cursor: default; }
+.tool-detail { flex-basis: 100%; padding: 2px 0 4px 12px; }
+
+.budget { height: 4px; margin: 4px 0 2px; border-radius: 2px;
+  background: var(--dsw-alias-interactive-bg-active, rgba(127,127,127,.18)); overflow: hidden; }
+.budget-used { display: block; height: 100%;
+  background: var(--dsw-alias-state-business-primary, currentColor); }
+.log-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; flex-wrap: wrap; }
+.log-time { font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-label-tertiary, #81858c); font-size: .85em; flex: none; }
+.lvl { flex: none; text-transform: none; font-weight: 500; }
+.lvl.up { color: var(--dsw-alias-state-success-primary, #22c55e); }
+.lvl.warn { color: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.lvl.error { color: var(--dsw-alias-state-error-primary, #ec1313); }
+.log-name { font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  color: var(--dsw-alias-label-secondary, inherit); flex: none; }
+.log-msg { flex: 1 1 100%; margin-top: 1px; overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary, inherit); }
+
+.indent-1 { padding-left: 12px; }
+.indent-2 { padding-left: 24px; }
+.indent-3 { padding-left: 36px; }
+
+   переносятся решения, зафиксированные в контракте)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ПРЕВЬЮ: каркас страницы и новые элементы (в продукт не переносится дословно —
+   переносятся решения, зафиксированные в контракте)
+   ───────────────────────────────────────────────────────────────────────── */
+
+body { margin: 0; font-family: var(--dsw-font-family); font-size: 14px;
+  background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); }
+
+.doc-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: baseline;
+  gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base); flex-wrap: wrap; }
+.doc-head h1 { font-size: 15px; margin: 0; font-weight: 600; }
+.doc-head .sub { color: var(--dsw-alias-label-tertiary); font-size: .85em; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 48px;
+  display: flex; flex-direction: column; gap: 28px; }
+section { scroll-margin-top: 64px; }
+section > h2 { display: flex; align-items: baseline; gap: 8px; font-size: 13px;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary); margin: 0 0 4px; }
+.note { color: var(--dsw-alias-label-tertiary); font-size: .85em; margin: 2px 0 10px;
+  max-width: 86ch; overflow-wrap: anywhere; }
+.frame { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px;
+  overflow: hidden; background: var(--dsw-alias-bg-base); }
+.frame-pad { padding: 10px 12px; }
+.frame-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.panel { width: 451px; max-width: 100%; display: flex; flex-direction: column; height: 900px; }
+
+/* F-33 — пульс «connecting»: кольцо вокруг точки, ambient-моушен */
+.dot.pulse { position: relative; }
+.dot.pulse::after { content: ""; position: absolute; inset: -3px; border-radius: 50%;
+  border: 1.5px solid var(--dsw-alias-state-warn-primary); opacity: 0;
+  animation: dsh-pulse 1.6s ease-in-out infinite; }
+@keyframes dsh-pulse {
+  0% { transform: scale(.55); opacity: .95; }
+  70% { transform: scale(1.45); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+/* F-33 — пороги бюджета: warn при > 85 %, error при exhausted */
+.budget-used.warn { background: var(--dsw-alias-state-warn-primary); }
+.budget-used.error { background: var(--dsw-alias-state-error-primary); }
+
+/* F-33 — skeleton вместо мигания вёрстки, пока оффер не опубликован */
+.skel { border-radius: 4px; min-height: .85em;
+  background: linear-gradient(90deg,
+    var(--dsw-alias-bg-layer-2, rgba(127,127,127,.08)) 25%,
+    var(--dsw-alias-bg-layer-3, rgba(127,127,127,.16)) 50%,
+    var(--dsw-alias-bg-layer-2, rgba(127,127,127,.08)) 75%);
+  background-size: 200% 100%; animation: dsh-shimmer 1.4s linear infinite; }
+@keyframes dsh-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* F-33 — пустое состояние: пунктирный контейнер + одно действие */
+.empty-dash { border: 1px dashed var(--dsw-alias-border-l2, rgba(127,127,127,.4));
+  border-radius: 6px; padding: 14px 12px; display: flex; flex-direction: column;
+  gap: 6px; align-items: flex-start; max-width: 420px; }
+.empty-dash .hint { max-width: none; }
+
+/* F-34 — планка фильтров логов: серверы, поиск, follow, копия */
+.log-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 4px 0 6px; }
+.log-tools .sep { color: var(--dsw-alias-label-tertiary); }
+.search { flex: 1 1 110px; min-width: 100px; padding: 2px 8px; border-radius: 4px;
+  font: inherit; font-size: .85em;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  background: transparent; color: inherit; }
+.search:focus { outline: none;
+  border-color: var(--dsw-alias-border-l3, rgba(127,127,127,.5)); }
+.search::placeholder { color: var(--dsw-alias-label-tertiary); }
+.copy { opacity: .35; border: none; background: transparent; cursor: pointer;
+  font: inherit; font-size: .78em; padding: 0 2px; flex: none;
+  color: var(--dsw-alias-label-tertiary); }
+.copy:hover, .copy:focus { opacity: 1; color: var(--dsw-alias-label-primary); }
+
+/* F-35 — пикер пинов: поиск + тумблер */
+.pin-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; flex-wrap: wrap; }
+.switch { width: 28px; height: 16px; border-radius: 999px; position: relative; flex: none;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25));
+  background: var(--dsw-alias-bg-layer-3, rgba(127,127,127,.12));
+  cursor: pointer; padding: 0; transition: background .15s var(--ds-ease-in-out); }
+.switch::after { content: ""; position: absolute; top: 1px; left: 1px; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--dsw-alias-label-tertiary);
+  transition: left .15s var(--ds-ease-in-out), background .15s var(--ds-ease-in-out); }
+.switch.on { background: var(--dsw-alias-state-business-primary); border-color: transparent; }
+.switch.on::after { left: 13px; background: var(--dsw-static-neutral-00); }
+
+/* F-35 — таблица с сортируемой колонкой статуса */
+.d-table { border-collapse: collapse; width: 100%; font-size: .9em; }
+.d-table th { text-align: left; color: var(--dsw-alias-label-tertiary); font-size: .75em;
+  letter-spacing: .08em; text-transform: uppercase; font-weight: 500;
+  padding: 4px 8px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.d-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.d-table th.sortable:hover { color: var(--dsw-alias-label-primary); }
+.d-table td { padding: 3px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); }
+.d-table tr:last-child td { border-bottom: none; }
+
+/* F-35 — дифф черновика против документа */
+.diff { font-family: var(--dsw-font-mono, ui-monospace, monospace); font-size: .82em;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(127,127,127,.25)); border-radius: 6px;
+  padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.diff .del { color: var(--dsw-alias-state-error-primary); }
+.diff .add { color: var(--dsw-alias-state-success-primary); }
+
+/* F-36 — тосты: стек повторов схлопывается в один баннер */
+.toast-stage { position: relative; height: 120px; overflow: hidden;
+  border: 1px dashed var(--dsw-alias-border-l2, rgba(127,127,127,.4)); border-radius: 8px; }
+.toast-stack { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 8px; }
+.toast { display: flex; align-items: baseline; gap: 8px; padding: 12px 16px;
+  border-radius: 14px; font-size: .9em; max-width: 440px;
+  background: var(--dsw-alias-label-primary); color: var(--dsw-alias-bg-base);
+  animation: dsh-toast-in .25s var(--ds-ease-in-out); }
+.toast .t-detail { opacity: .75; font-size: .85em; }
+@keyframes dsh-toast-in { from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.pulse::after { animation: none; opacity: .5; transform: none; }
+  .skel { animation: none; }
+  .toast { animation: none; }
+  .switch, .switch::after { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="doc-head">
+  <h1>dsh-project-mcp — превью предложения «панель наблюдения»</h1>
+  <span class="sub">дельта F-33…F-36 поверх контракта; утверждённый макет — <span class="name">mockups/harness.html</span></span>
+  <span class="spacer"></span>
+  <button class="btn" id="theme-toggle">Тема: тёмная</button>
+</header>
+
+<main>
+<!-- ═══ §1 ВКЛАДКА: watchlist с дельтой F-33/F-34 ═══ -->
+<section id="tab">
+  <h2>1. Вкладка — watchlist <span class="tag">F-33</span><span class="tag">F-34</span></h2>
+  <p class="note">Планка и порядок блоков — текущий контракт (F-26). Новое: пульс у
+    <span class="name">connecting</span>, пороги окраски бюджета, планка фильтров логов
+    (серверы · поиск · follow · копия строки). Секция <span class="name">sessions</span> не
+    показана: рисуется только на расхождении (F-24).</p>
+  <div class="frame panel">
+    <div class="panel-bar">
+      <span class="name">example-service</span>
+      <span class="tag">this session</span>
+      <span class="spacer"></span>
+      <button class="btn">Sync</button>
+      <span class="dim">1 session</span>
+    </div>
+    <div class="body scroll">
+      <div class="block">
+        <div class="block-head">
+          <span class="block-label">servers</span>
+          <span class="spacer"></span>
+          <span class="tag warn" title="workspace: error">4/5 up</span>
+        </div>
+        <div class="row">
+          <span class="dot s-active"></span>
+          <span class="name">tglider</span>
+          <span class="muted c-active">active</span>
+          <span class="tag">http</span>
+        </div>
+        <div class="row">
+          <span class="dot s-warn pulse" title="connecting — handshake in progress"></span>
+          <span class="name">memory</span>
+          <span class="muted c-warn">connecting</span>
+          <span class="tag">stdio</span>
+        </div>
+        <div class="row">
+          <span class="dot s-idle"></span>
+          <span class="name">fetch</span>
+          <span class="muted c-idle">idle</span>
+          <span class="tag">http</span>
+          <span class="dim">idle 3d</span>
+        </div>
+        <div class="row quiet">
+          <span class="dot s-idle"></span>
+          <span class="name">legacy</span>
+          <span class="tag quiet">disabled</span>
+          <span class="tag">stdio</span>
+          <span class="dim">idle 12d</span>
+        </div>
+        <div class="row">
+          <span class="dot s-error"></span>
+          <span class="name">workspace</span>
+          <span class="muted c-error">error</span>
+          <span class="tag">stdio</span>
+          <span class="spacer"></span>
+          <button class="btn">Retry</button>
+        </div>
+        <div class="detail error">spawn ENOENT: mcp-workspace-server — command not found in $PATH</div>
+      </div>
+
+      <div class="block">
+        <div class="row"><span class="muted">2 pinned · 2 by the counters · 1 disclosed · 1 hidden</span></div>
+        <div class="budget" title="14,320 of 15,600 (92%)"><span class="budget-used warn" style="width:92%"></span></div>
+        <div class="hint">14,320 chars of 15,600 · ≈ 3,580 tokens</div>
+
+        <div class="group">pinned · always in the request</div>
+        <div class="tool">
+          <button class="tool-line" data-tool="search" aria-expanded="true">
+            <span class="dim">·</span><span class="name">search</span>
+          </button>
+          <button class="btn">Unpin</button>
+          <div class="tool-detail">
+            <div class="name">mcp__tglider__search</div>
+            <div class="hint">server tglider · pinned · step 3 · 14:29</div>
+          </div>
+        </div>
+
+        <div class="group">offered by the counters</div>
+        <div class="tool">
+          <button class="tool-line" data-tool="recall" aria-expanded="false">
+            <span class="dim">·</span><span class="name">recall</span><span class="dim">128 calls</span>
+          </button>
+          <button class="btn">Pin</button>
+        </div>
+        <div class="tool">
+          <button class="tool-line" data-tool="get" aria-expanded="false">
+            <span class="dim">·</span><span class="name">get</span><span class="dim">never called</span>
+          </button>
+          <button class="btn">Pin</button>
+        </div>
+
+        <div class="group">disclosed by the model · until the session ends</div>
+        <div class="tool">
+          <button class="tool-line" data-tool="vector" aria-expanded="false">
+            <span class="dim">·</span><span class="name">vector_query</span><span class="dim">14:31 · step 12</span>
+          </button>
+          <button class="btn">Hide</button>
+        </div>
+
+        <div class="group">hidden · 1</div>
+        <div class="row"><span class="chip">tglider/* 1</span></div>
+
+        <div class="hint" style="margin-top:6px">available to the model through mcp_search_tools only</div>
+      </div>
+
+      <div class="disclosure">
+        <button class="disclosure-head" data-disclosure="problems" aria-expanded="false">
+          <span class="mk">▸</span> Problems <span class="tag">1</span>
+        </button>
+      </div>
+
+      <div class="disclosure">
+        <button class="disclosure-head" data-disclosure="logs" aria-expanded="true">
+          <span class="mk">▾</span> Logs <span class="tag">4</span>
+        </button>
+        <div class="disclosure-body" data-disclosure-body="logs">
+          <div class="log-tools">
+            <button class="chip on" data-lvl="all" aria-pressed="true">this session</button>
+            <button class="chip" data-lvl="all" aria-pressed="false">all sessions</button>
+            <span class="sep">·</span>
+            <button class="chip on" data-lvl="all" aria-pressed="true">all levels</button>
+            <button class="chip" data-lvl="error" aria-pressed="false">errors</button>
+            <span class="sep">·</span>
+            <button class="chip on" data-server="all" aria-pressed="true">all servers</button>
+            <button class="chip" data-server="tglider" aria-pressed="false">tglider</button>
+            <button class="chip" data-server="memory" aria-pressed="false">memory</button>
+            <button class="chip" data-server="fetch" aria-pressed="false">fetch</button>
+            <button class="chip" data-server="workspace" aria-pressed="false">workspace</button>
+            <input class="search" id="log-search" placeholder="search messages" aria-label="search messages">
+            <button class="chip on" id="log-follow" aria-pressed="true" title="scroll to new events as they arrive">follow</button>
+            <button class="btn">Clear</button>
+          </div>
+          <div id="log-rows">
+            <div class="log-row" data-server="tglider" data-lvl="up">
+              <span class="log-time">14:32:07</span><span class="lvl up">up</span>
+              <span class="log-name">tglider</span>
+              <span class="log-msg">server up after 1.2 s · 12 tools mounted</span>
+              <button class="copy">copy</button>
+            </div>
+            <div class="log-row" data-server="workspace" data-lvl="error">
+              <span class="log-time">14:31:58</span><span class="lvl error">error</span>
+              <span class="log-name">workspace</span>
+              <span class="log-msg">spawn ENOENT: mcp-workspace-server — command not found in $PATH</span>
+              <button class="copy">copy</button>
+              <div class="detail error">checked $PATH from the project root: the binary is declared in .dsh/mcp.json but not installed</div>
+            </div>
+            <div class="log-row" data-server="memory" data-lvl="warn">
+              <span class="log-time">14:31:40</span><span class="lvl warn">warn</span>
+              <span class="log-name">memory</span>
+              <span class="log-msg">tool recall took 4.2 s (soft budget is 3 s)</span>
+              <button class="copy">copy</button>
+            </div>
+            <div class="log-row" data-server="fetch" data-lvl="info">
+              <span class="log-time">14:30:12</span><span class="lvl">info</span>
+              <span class="log-name">fetch</span>
+              <span class="log-msg">12 tools mounted · transport http</span>
+              <button class="copy">copy</button>
+            </div>
+          </div>
+          <div class="hint" id="log-empty" hidden>No events match the filters.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ §2 SKELETON ═══ -->
+<section id="skeleton">
+  <h2>2. Пока оффер не опубликован — skeleton <span class="tag">F-33</span></h2>
+  <p class="note">Сейчас первый снапшот подменяет пустое состояние — вёрстка прыгает. Предлагается
+    держать блоки строками-заглушками, пока хост не опубликовал <span class="name">tools</span>.</p>
+  <div class="frame-row">
+    <div class="frame panel" style="height:300px">
+      <div class="panel-bar">
+        <span class="name">example-service</span>
+        <span class="tag">this session</span>
+        <span class="spacer"></span>
+        <button class="btn" disabled>Sync</button>
+        <span class="dim">1 session</span>
+      </div>
+      <div class="body scroll">
+        <div class="block">
+          <div class="block-head"><span class="block-label">servers</span><span class="spacer"></span></div>
+          <div class="row"><span class="skel" style="width:8px;height:8px;border-radius:50%"></span><span class="skel" style="width:64px"></span><span class="skel" style="width:44px"></span><span class="skel" style="width:34px"></span></div>
+          <div class="row"><span class="skel" style="width:8px;height:8px;border-radius:50%"></span><span class="skel" style="width:88px"></span><span class="skel" style="width:60px"></span><span class="skel" style="width:34px"></span></div>
+          <div class="row"><span class="skel" style="width:8px;height:8px;border-radius:50%"></span><span class="skel" style="width:52px"></span><span class="skel" style="width:38px"></span><span class="skel" style="width:34px"></span></div>
+        </div>
+        <div class="block">
+          <div class="row"><span class="skel" style="width:70%"></span></div>
+          <div class="budget"><span class="budget-used" style="width:38%;background:var(--dsw-alias-bg-layer-3, rgba(127,127,127,.16))"></span></div>
+          <div class="row"><span class="skel" style="width:90%"></span></div>
+          <div class="row"><span class="skel" style="width:62%"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ §3 ПУСТЫЕ СОСТОЯНИЯ ═══ -->
+<section id="empty">
+  <h2>3. Пустые состояния — контейнер с действием <span class="tag">F-33</span></h2>
+  <p class="note">Сейчас мёртвая концовка из одной строки. Пунктирный контейнер держит подсказку и
+    одно действие — выход из тупика, а не его подтверждение.</p>
+  <div class="frame-row">
+    <div class="empty-dash">
+      <span class="empty-title">This session’s folder is not inside a project yet.</span>
+      <span class="hint">Open a folder with <span class="name">.dsh/mcp.json</span> — the panel will pick the project up on the next sync.</span>
+      <button class="btn">Open project settings</button>
+    </div>
+    <div class="empty-dash">
+      <span class="empty-title">Nothing to hide yet</span>
+      <span class="hint">The tool offer publishes when the session starts; until then the request carries built-ins only.</span>
+      <span class="hint name">tools[] = built-ins only · mcp__* not registered yet</span>
+      <button class="btn">Sync</button>
+    </div>
+  </div>
+</section>
+<!-- ═══ §4 НАСТРОЙКИ: F-35 ═══ -->
+<section id="settings">
+  <h2>4. Страница настроек — control room <span class="tag">F-35</span></h2>
+  <p class="note">Те же примитивы, zoom «файлы». Новое: поиск в пикере пинов, сортировка таблицы
+    серверов по статусу, настоящий дифф черновика против документа вместо одиночного тела.</p>
+
+  <div class="frame-row">
+    <div class="frame frame-pad" style="flex:1 1 340px;min-width:300px">
+      <div class="block-head">
+        <span class="block-label">tools · pin picker</span>
+        <span class="spacer"></span>
+        <input class="search" id="pin-search" placeholder="filter by name" aria-label="filter pins by name">
+      </div>
+      <div style="margin-top:4px">
+        <div class="pin-row" data-name="mcp__memory__search">
+          <span class="name">search</span><span class="dim">128 calls</span>
+          <span class="spacer"></span><span class="tag pin-mark">pinned</span>
+          <button class="switch on" aria-pressed="true" aria-label="pin search"></button>
+        </div>
+        <div class="pin-row" data-name="mcp__memory__vector_query">
+          <span class="name">vector_query</span><span class="dim">96 calls</span>
+          <span class="spacer"></span><span class="tag pin-mark">pinned</span>
+          <button class="switch on" aria-pressed="true" aria-label="pin vector_query"></button>
+        </div>
+        <div class="pin-row" data-name="mcp__fetch__get">
+          <span class="name">get</span><span class="dim">41 calls</span>
+          <span class="spacer"></span>
+          <button class="switch" aria-pressed="false" aria-label="pin get"></button>
+        </div>
+        <div class="pin-row" data-name="mcp__fetch__put">
+          <span class="name">put</span><span class="dim">12 calls</span>
+          <span class="spacer"></span>
+          <button class="switch" aria-pressed="false" aria-label="pin put"></button>
+        </div>
+        <div class="pin-row" data-name="mcp__tglider__delete">
+          <span class="name">delete</span><span class="dim">2 calls</span>
+          <span class="spacer"></span>
+          <button class="switch" aria-pressed="false" aria-label="pin delete"></button>
+        </div>
+        <div class="pin-row" data-name="mcp__tglider__list_dir">
+          <span class="name">list_dir</span><span class="dim">never called</span>
+          <span class="spacer"></span>
+          <button class="switch" aria-pressed="false" aria-label="pin list_dir"></button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:6px">mcp__&lt;server&gt;__&lt;tool&gt;; the registry applies the prefix, not this page</div>
+    </div>
+
+    <div class="frame frame-pad" style="flex:1 1 420px;min-width:340px">
+      <div class="block-head"><span class="block-label">servers</span>
+        <span class="spacer"></span><span class="dim">click STATUS to sort</span></div>
+      <table class="d-table" id="server-table" style="margin-top:4px">
+        <thead><tr>
+          <th>server</th><th>transport</th>
+          <th class="sortable" data-sort="status" aria-sort="none">status <span class="mk">↕</span></th>
+          <th>source</th><th>on</th>
+        </tr></thead>
+        <tbody>
+          <tr data-status="active"><td><span class="dot s-active"></span> <span class="name">tglider</span></td>
+            <td class="muted">http</td><td class="c-active">active</td>
+            <td class="name muted">.dsh/mcp.json</td><td>✓</td></tr>
+          <tr data-status="connecting"><td><span class="dot s-warn pulse"></span> <span class="name">memory</span></td>
+            <td class="muted">stdio</td><td class="c-warn">connecting</td>
+            <td class="name muted">.dsh/mcp.json</td><td>✓</td></tr>
+          <tr data-status="error"><td><span class="dot s-error"></span> <span class="name">workspace</span></td>
+            <td class="muted">stdio</td><td class="c-error">error</td>
+            <td class="name muted">workspace/.dsh/mcp.json</td><td>✓</td></tr>
+          <tr data-status="idle"><td><span class="dot s-idle"></span> <span class="name">fetch</span></td>
+            <td class="muted">http</td><td class="c-idle">idle <span class="dim">3d</span></td>
+            <td class="name muted">.dsh/mcp.json</td><td>✓</td></tr>
+          <tr data-status="disabled"><td class="row quiet" style="padding:0"><span class="dot s-idle"></span> <span class="name">legacy</span></td>
+            <td class="muted">stdio</td><td class="c-idle">disabled <span class="dim">12d</span></td>
+            <td class="name muted">global mcp.json</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="frame frame-pad" style="margin-top:16px">
+    <div class="block-head"><span class="block-label">editing .dsh/mcp.json — draft vs document</span></div>
+    <pre class="diff" style="margin-top:6px">{
+  "memory": {
+    "command": "mcp-memory-server",
+<span class="del">-   "args": ["--port", "7700"]</span>
+<span class="add">+   "args": ["--port", "7800"],</span>
+<span class="add">+   "env": { "MEMORY_TTL": "3600" }</span>
+  }
+}</pre>
+    <p class="note" style="margin:6px 0 0">Дифф — между черновиком и телом документа; пока панель не
+      парсится в запись, <span class="name">Save…</span> выключена с той же строкой, что и сейчас.</p>
+  </div>
+</section>
+
+<!-- ═══ §5 ТОСТЫ: F-36 ═══ -->
+<section id="toasts">
+  <h2>5. Тосты — повторы схлопываются в один баннер <span class="tag">F-36</span></h2>
+  <p class="note">Флап сервера (failed → up за пару секунд) занимает два из трёх слотов стека.
+    Предлагается склеивать подряд идущие события одного сервера в один баннер с итогом.</p>
+  <div class="toast-stage">
+    <div class="toast-stack" id="toast-stack">
+      <div class="toast"><span class="dot s-error"></span><span>workspace failed</span>
+        <span class="t-detail">example-service · spawn ENOENT</span></div>
+    </div>
+  </div>
+  <div style="margin-top:8px"><button class="btn" id="toast-play">Сыграть флап сервера</button></div>
+</section>
+
+<!-- ═══ §6 ЛЕГЕНДА ═══ -->
+<section id="legend">
+  <h2>6. Легенда: новость → единица работы</h2>
+  <table class="d-table">
+    <thead><tr><th>Новость</th><th>Где смотреть</th><th>Единица</th></tr></thead>
+    <tbody>
+      <tr><td>пульс точки у <span class="name">connecting</span> (reduced-motion — статично)</td><td>§1 · серверы</td><td class="name">F-33</td></tr>
+      <tr><td>бюджет окрашивается: warn &gt; 85 %, error при exhausted</td><td>§1 · тулы</td><td class="name">F-33</td></tr>
+      <tr><td>skeleton вместо мигания вёрстки до первого оффера</td><td>§2</td><td class="name">F-33</td></tr>
+      <tr><td>пустые состояния — пунктирный контейнер + одно действие</td><td>§3</td><td class="name">F-33</td></tr>
+      <tr><td>логи: фильтр по серверу, поиск по сообщению, follow, копия строки</td><td>§1 · логи</td><td class="name">F-34</td></tr>
+      <tr><td>поиск в пикере пинов</td><td>§4</td><td class="name">F-35</td></tr>
+      <tr><td>сортировка таблицы серверов по статусу</td><td>§4</td><td class="name">F-35</td></tr>
+      <tr><td>дифф черновика против документа в редакторе</td><td>§4</td><td class="name">F-35</td></tr>
+      <tr><td>тосты: склейка повторных событий одного сервера</td><td>§5</td><td class="name">F-36</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Границы не тронуты: раскрывашка <span class="name">Problems</span> появляется
+    только при проблемах и не автораскрывается; <span class="name">Release</span> живёт только в
+    секции <span class="name">sessions</span>; полосы над композером нет.</p>
+</section>
+</main>
+
+<script>
+// Тема: тот же контракт, что у харнесса — атрибут на <body>.
+const themeToggle = document.getElementById('theme-toggle')
+function paintTheme() {
+  themeToggle.textContent = document.body.hasAttribute('data-ds-dark-theme') ? 'Тема: тёмная' : 'Тема: светлая'
+}
+themeToggle.addEventListener('click', () => {
+  if (document.body.hasAttribute('data-ds-dark-theme')) document.body.removeAttribute('data-ds-dark-theme')
+  else document.body.setAttribute('data-ds-dark-theme', '')
+  paintTheme()
+})
+document.body.setAttribute('data-ds-dark-theme', '')
+paintTheme()
+
+// Хеш адресует тему и раздел: `#light,settings`.
+const hashTokens = location.hash.slice(1).split(',').map((t) => t.trim()).filter(Boolean)
+if (hashTokens.includes('light')) document.body.removeAttribute('data-ds-dark-theme')
+paintTheme()
+for (const token of hashTokens) {
+  const section = document.getElementById(token)
+  if (section) { section.scrollIntoView(); break }
+}
+
+// Раскрывашки: маркер и скрытое тело — поведение компонента.
+function setDisclosure(name, open) {
+  const head = document.querySelector('[data-disclosure="' + name + '"]')
+  const body = document.querySelector('[data-disclosure-body="' + name + '"]')
+  if (!head) return
+  head.setAttribute('aria-expanded', String(open))
+  if (body) body.hidden = !open
+  const marker = head.querySelector('.mk')
+  if (marker) marker.textContent = open ? '▾' : '▸'
+}
+for (const head of document.querySelectorAll('[data-disclosure]')) {
+  head.addEventListener('click', () => {
+    setDisclosure(head.getAttribute('data-disclosure'), head.getAttribute('aria-expanded') !== 'true')
+  })
+}
+
+// Раскрытие строки инструмента.
+for (const line of document.querySelectorAll('[data-tool]')) {
+  const detail = line.parentElement.querySelector('.tool-detail')
+  line.addEventListener('click', () => {
+    const open = line.getAttribute('aria-expanded') !== 'true'
+    line.setAttribute('aria-expanded', String(open))
+    if (detail) detail.hidden = !open
+  })
+}
+
+// F-34 — фильтры логов: уровень, сервер, поиск по тексту.
+const logRows = Array.from(document.querySelectorAll('#log-rows .log-row'))
+const logEmpty = document.getElementById('log-empty')
+const logState = { lvl: 'all', server: 'all', text: '' }
+function applyLogFilters() {
+  let shown = 0
+  for (const row of logRows) {
+    const okLvl = logState.lvl === 'all' || row.dataset.lvl === logState.lvl
+    const okServer = logState.server === 'all' || row.dataset.server === logState.server
+    const okText = !logState.text || row.textContent.toLowerCase().includes(logState.text)
+    const ok = okLvl && okServer && okText
+    row.hidden = !ok
+    if (ok) shown++
+  }
+  logEmpty.hidden = shown > 0
+}
+for (const chip of document.querySelectorAll('.log-tools [data-lvl]')) {
+  chip.addEventListener('click', () => {
+    logState.lvl = chip.dataset.lvl
+    for (const other of document.querySelectorAll('.log-tools [data-lvl]')) {
+      const on = other === chip
+      other.classList.toggle('on', on)
+      other.setAttribute('aria-pressed', String(on))
+    }
+    applyLogFilters()
+  })
+}
+for (const chip of document.querySelectorAll('.log-tools [data-server]')) {
+  chip.addEventListener('click', () => {
+    logState.server = chip.dataset.server
+    for (const other of document.querySelectorAll('.log-tools [data-server]')) {
+      const on = other === chip
+      other.classList.toggle('on', on)
+      other.setAttribute('aria-pressed', String(on))
+    }
+    applyLogFilters()
+  })
+}
+document.getElementById('log-search').addEventListener('input', (event) => {
+  logState.text = event.target.value.trim().toLowerCase()
+  applyLogFilters()
+})
+document.getElementById('log-follow').addEventListener('click', (event) => {
+  const chip = event.currentTarget
+  const on = chip.getAttribute('aria-pressed') !== 'true'
+  chip.setAttribute('aria-pressed', String(on))
+  chip.classList.toggle('on', on)
+})
+
+// F-34 — копия строки лога.
+for (const button of document.querySelectorAll('#log-rows .copy')) {
+  button.addEventListener('click', () => {
+    const row = button.closest('.log-row')
+    const text = Array.from(row.querySelectorAll(':scope > .log-time, :scope > .lvl, :scope > .log-name, :scope > .log-msg'))
+      .map((node) => node.textContent).join('  ')
+    const done = () => {
+      button.textContent = 'copied'
+      setTimeout(() => { button.textContent = 'copy' }, 1000)
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done)
+    } else {
+      done()
+    }
+  })
+}
+
+// F-35 — поиск в пикере пинов.
+const pinRows = Array.from(document.querySelectorAll('.pin-row'))
+document.getElementById('pin-search').addEventListener('input', (event) => {
+  const needle = event.target.value.trim().toLowerCase()
+  for (const row of pinRows) row.hidden = needle && !row.dataset.name.includes(needle)
+})
+// F-35 — тумблер пина.
+for (const sw of document.querySelectorAll('.pin-row .switch')) {
+  sw.addEventListener('click', () => {
+    const on = sw.getAttribute('aria-pressed') !== 'true'
+    sw.setAttribute('aria-pressed', String(on))
+    sw.classList.toggle('on', on)
+    const mark = sw.closest('.pin-row').querySelector('.pin-mark')
+    if (mark) mark.remove()
+    if (on) {
+      const tag = document.createElement('span')
+      tag.className = 'tag pin-mark'
+      tag.textContent = 'pinned'
+      sw.parentElement.insertBefore(tag, sw)
+    }
+  })
+}
+
+// F-35 — сортировка таблицы серверов по статусу.
+const STATUS_RANK = { error: 0, connecting: 1, active: 2, idle: 3, disabled: 4 }
+const table = document.getElementById('server-table')
+const tbody = table.querySelector('tbody')
+const statusHead = table.querySelector('th.sortable')
+// Первый клик — по возрастанию ранга: самое критичное (error) вверху.
+let sortDir = -1
+statusHead.addEventListener('click', () => {
+  sortDir = -sortDir
+  const rows = Array.from(tbody.querySelectorAll('tr'))
+  rows.sort((a, b) => (STATUS_RANK[a.dataset.status] - STATUS_RANK[b.dataset.status]) * sortDir)
+  for (const row of rows) tbody.appendChild(row)
+  statusHead.setAttribute('aria-sort', sortDir === 1 ? 'ascending' : 'descending')
+  statusHead.querySelector('.mk').textContent = sortDir === 1 ? '↑' : '↓'
+})
+
+// F-36 — демо флапа: failed, затем склейка в один баннер с итогом.
+const toastStack = document.getElementById('toast-stack')
+const toastPlay = document.getElementById('toast-play')
+toastPlay.addEventListener('click', () => {
+  toastPlay.disabled = true
+  toastStack.innerHTML =
+    '<div class="toast"><span class="dot s-error"></span><span>workspace failed</span>' +
+    '<span class="t-detail">example-service · spawn ENOENT</span></div>'
+  setTimeout(() => {
+    toastStack.innerHTML =
+      '<div class="toast"><span class="dot s-active"></span><span>workspace up</span>' +
+      '<span class="t-detail">example-service · recovered after 2 s · 2 events grouped</span></div>'
+    toastPlay.disabled = false
+  }, 1800)
+})
+</script>
+</body>
+</html>

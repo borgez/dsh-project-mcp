@@ -1,0 +1,34 @@
+[
+ {
+  "out": "tab-servers.png",
+  "file": "mockups/harness.html",
+  "heading": "1. The sidebar tab — one surface",
+  "selector": "#tab .h-app",
+  "hash": "#dark,tab",
+  "what": "Surface A — the sidebar tab (one surface)"
+ },
+ {
+  "out": "tab-logs.png",
+  "file": "mockups/harness.html",
+  "heading": "1. The sidebar tab — one surface",
+  "selector": "#tab .h-app",
+  "hash": "#dark,tab,logs",
+  "what": "Surface D — the logs disclosure inside the single surface"
+ },
+ {
+  "out": "settings-servers.png",
+  "file": "mockups/harness.html",
+  "heading": "3. The page in the native settings",
+  "selector": "#settings .h-panel",
+  "hash": "#dark,settings",
+  "what": "Surface B — the servers table"
+ },
+ {
+  "out": "settings-tools.png",
+  "file": "mockups/harness.html",
+  "heading": "3. The page in the native settings",
+  "selector": "#settings .h-panel",
+  "hash": "#dark,settings,tools",
+  "what": "Surface B — tools"
+ }
+]

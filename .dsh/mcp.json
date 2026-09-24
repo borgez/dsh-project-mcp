@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tglider": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "tglider", "--workspace", ".", "--default-timeout", "30m"]
+    }
+  }
+}

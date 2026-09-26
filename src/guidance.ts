@@ -50,8 +50,11 @@ export const MAX_GUIDANCE_CHARS = 1200
 /** Server bullets rendered at most, before the rest is summarized. */
 export const MAX_GUIDANCE_SERVERS = 8
 
-/** Tool names sampled in one server bullet before `+N more`. */
-export const MAX_GUIDANCE_TOOLS = 4
+/** Deferred tool names the on-demand inventory line shows before `+N more`. */
+export const MAX_GUIDANCE_HIDDEN_NAMES = 12
+
+/** Baseline names the most-used line shows before `+N more`. */
+export const MAX_GUIDANCE_MOST_USED = 4
 
 /** Longest purpose text kept in one server bullet. */
 export const MAX_GUIDANCE_PURPOSE = 80
@@ -84,6 +87,12 @@ export interface GuidanceInput {
   readonly offered?: readonly string[]
   /** Tool names reachable only through `mcp_search_tools` right now. */
   readonly deferred?: readonly string[]
+  /**
+   * The counter-seeded hot tools, most-called first. They are offered directly
+   * from the first step on; naming them keeps the model from searching for
+   * what it already has.
+   */
+  readonly mostUsed?: readonly string[]
   /** Whether the on-demand search surface is on; defaults to the activation default. */
   readonly activationEnabled?: boolean
 }
@@ -91,13 +100,13 @@ export interface GuidanceInput {
 /**
  * Build the project-MCP guidance section.
  *
- * Deterministic and total: server bullets follow code-unit name order, tool
- * samples are sorted and take only names that are actually deferred, and the
+ * Deterministic and total: server bullets follow code-unit name order, the
+ * deferred surface is listed as one flat, sorted, deduped names line, and the
  * result never exceeds {@link MAX_GUIDANCE_CHARS} — when it would, trailing
  * server bullets are replaced by an `and N more server(s)` line, the on-demand
- * paragraph is reserved its room first, and a final cut falls back to the last
- * complete line. Equal input always yields equal output, and `''` means there
- * is nothing worth saying.
+ * paragraph and the names line are reserved their room first, and a final cut
+ * falls back to the last complete line. Equal input always yields equal
+ * output, and `''` means there is nothing worth saying.
  *
  * @param input - project label, mounted servers and the offered/deferred split.
  * @returns markdown for one prompt section, or `''`.
@@ -118,15 +127,20 @@ export function buildGuidance(input: GuidanceInput): string {
     `Project \`${label(input.project)}\` mounts ${servers.length} MCP server(s) in this session.`,
     '',
   ]
-  const tail =
-    deferred.size === 0
-      ? []
-      : ['', onDemandParagraph(offered.size, deferred.size)]
+  const tail: string[] = []
+  // The counter-seeded hot tools are offered from the first step on; naming
+  // them here keeps the model from searching for what it already has.
+  const hot = mostUsedLine(input.mostUsed ?? [])
+  if (activationEnabled && hot !== '') tail.push('', hot)
+  if (deferred.size > 0) {
+    tail.push('', onDemandParagraph(offered.size, deferred.size))
+    tail.push('', hiddenNamesLine(deferred))
+  }
   const bullets: string[] = []
   let hidden = 0
   for (const [index, server] of servers.entries()) {
     const remaining = servers.length - index
-    const bullet = serverBullet(server, deferred)
+    const bullet = serverBullet(server)
     const overflow = remaining > 1 ? [`- … and ${remaining - 1} more server(s)`] : []
     const candidate = [...header, ...bullets, bullet, ...overflow, ...tail].join('\n')
     if (index >= MAX_GUIDANCE_SERVERS || candidate.length > MAX_GUIDANCE_CHARS) {
@@ -287,35 +301,70 @@ function normalizeServers(servers: readonly GuidanceServer[]): GuidanceServer[] 
   return [...byName.values()].sort((left, right) => compareNames(left.name, right.name))
 }
 
-/** One server bullet: state, optional purpose, and the deferred tool sample. */
-function serverBullet(server: GuidanceServer, deferred: ReadonlySet<string>): string {
+/** One server bullet: state and the optional purpose. */
+function serverBullet(server: GuidanceServer): string {
   const state =
     server.transport === undefined ? server.status : `${server.transport}, ${server.status}`
   const purpose = shorten(server.purpose, MAX_GUIDANCE_PURPOSE)
-  const sample = toolSample(server.tools ?? [], deferred)
-  return `- ${server.name} (${state})${purpose === '' ? '' : ` — ${purpose}`}${
-    sample === '' ? '' : `: ${sample}`
-  }`
+  return `- ${server.name} (${state})${purpose === '' ? '' : ` — ${purpose}`}`
 }
 
 /**
- * The deterministic tool sample of one server: only names that are actually
- * deferred, sorted, truncated to {@link MAX_GUIDANCE_TOOLS} with a `+N more`.
+ * The flat inventory of the deferred surface: bare names only, sorted and
+ * deduped, truncated to {@link MAX_GUIDANCE_HIDDEN_NAMES} with a `+N more`.
+ * Descriptions and schemas are the expensive part, so the line carries names
+ * only — the model picks the one it needs and runs a single targeted search
+ * instead of rephrasing blind guesses. The sentence also states the
+ * direct-call contract: deferral trims the assembled request list, it never
+ * unregisters the tool, so a call by the exact full name still executes;
+ * searching the name first is how the model sees the description and
+ * parameters, not a gate.
  */
-function toolSample(tools: readonly string[], deferred: ReadonlySet<string>): string {
-  const names = [...new Set(tools)].filter((name) => deferred.has(name)).sort(compareNames)
-  if (names.length === 0) return ''
-  const shown = names.slice(0, MAX_GUIDANCE_TOOLS)
+function hiddenNamesLine(deferred: ReadonlySet<string>): string {
+  const names = [...deferred].sort(compareNames)
+  const shown = names.slice(0, MAX_GUIDANCE_HIDDEN_NAMES)
   const hidden = names.length - shown.length
-  return hidden === 0 ? shown.join(', ') : `${shown.join(', ')} +${hidden} more`
+  const list = hidden === 0 ? shown.join(', ') : `${shown.join(', ')} +${hidden} more`
+  return (
+    `On demand right now: ${list} — every one of them runs when called by its exact full ` +
+    `name \`mcp__<server>__<tool>\`; search a name with \`${SEARCH_TOOL_NAME}\` first to see ` +
+    'its description and parameters.'
+  )
 }
 
 /** The paragraph that turns "a tool is missing" into "ask for it". */
 function onDemandParagraph(offered: number, deferred: number): string {
   return (
     `${offered} of ${offered + deferred} MCP tool(s) are offered directly; the other ${deferred} ` +
-    `are offered on demand — call \`${SEARCH_TOOL_NAME}\` with a short description of what you ` +
-    'need, and a tool it activates becomes callable from the next step.'
+    `are offered on demand — call \`${SEARCH_TOOL_NAME}\` with a keyword or a tool name (several ` +
+    'words are matched one by one), and a tool it activates becomes callable from the next ' +
+    'step. Search once with the best keywords you have; when the search reports no match, this ' +
+    'project mounts no such ' +
+    'tool — report the gap instead of rephrasing the search or guessing a name.'
+  )
+}
+
+/**
+ * The session-start "most used" line. The input arrives most-called first
+ * (the seeded baseline's insertion order is the rank order), so the line
+ * keeps that order and samples the top names before `+N more`.
+ */
+function mostUsedLine(mostUsed: readonly string[]): string {
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const name of mostUsed) {
+    const trimmed = name.trim()
+    if (trimmed === '' || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    unique.push(trimmed)
+  }
+  if (unique.length === 0) return ''
+  const shown = unique.slice(0, MAX_GUIDANCE_MOST_USED)
+  const hidden = unique.length - shown.length
+  const list = hidden === 0 ? shown.join(', ') : `${shown.join(', ')} +${hidden} more`
+  return (
+    `Most used in this project's sessions, offered from the first step on: ${list} — ` +
+    'call them directly, no search needed.'
   )
 }
 

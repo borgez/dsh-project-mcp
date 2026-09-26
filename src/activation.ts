@@ -54,6 +54,13 @@ export const DEFAULT_SEARCH_LIMIT = 8
 /** Hard cap on matches one `mcp_search_tools` call may activate. */
 export const MAX_SEARCH_LIMIT = 50
 
+/**
+ * Distinct query words one `mcp_search_tools` call scores at most. A query
+ * longer than that is a sentence, and its tail words add noise rather than
+ * signal — the first words are the ones the model chose first.
+ */
+export const MAX_SEARCH_TOKENS = 8
+
 /** Registry name of the discovery tool this module registers. */
 export const SEARCH_TOOL_NAME = 'mcp_search_tools'
 
@@ -1086,13 +1093,13 @@ export function createSearchTool(options: SearchToolOptions): ToolDefinitionLike
   return {
     name: SEARCH_TOOL_NAME,
     description:
-      'Search the MCP tools this session sees and activate every match, so the activated tools are offered directly from the next model step on. Use it when the tool you need is not listed: a tool it activates joins the offered list from the next model step on, and until then only the tools already listed are reliable. `query` matches tool names and descriptions (case-insensitive substring); `limit` caps how many matches are activated.',
+      'Search the MCP tools this session sees and activate every match, so the activated tools are offered directly from the next model step on. Use it when the tool you need is not listed: a tool it activates joins the offered list from the next model step on, and until then only the tools already listed are reliable. `query` matches tool names and descriptions — case-insensitive, each word on its own, so separate keywords (`issue update`) find what a whole sentence does not; `limit` caps how many matches are activated.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'What the needed MCP tool does, or part of its name.',
+          description: 'A keyword or name fragment of the needed MCP tool; several words are matched one by one.',
         },
         limit: {
           type: 'integer',
@@ -1401,27 +1408,29 @@ export function installActivation(options: ActivationWiringOptions): () => void 
     // and the discovery tool is not advertised — except that another project's
     // tools, which this session must never carry, still leave it.
     if (policy.mode !== 'disclosure') return contain(result)
-    // A surface inside the budget stays exactly as the rest of the harness
-    // assembled it. The counters keep accumulating either way, so the decision
-    // follows the session as its visible MCP surface grows.
-    if (!deferring(surface)) return contain(result)
     advance()
-    // Over budget, this module does the trimming a presentation owner would
+    // The discovery tool is pinned: offered in every disclosure assembly,
+    // whatever the budget says. A surface inside the budget is carried whole —
+    // every mounted tool stays listed — and the search tool is added alongside
+    // them so the model can always discover tools as the project grows. Over
+    // budget, this module does the trimming a presentation owner would
     // otherwise do: every `mcp__` tool the budget pushed out is dropped, while
     // the non-MCP tools the inner listeners listed (core tools, other plugins)
-    // are kept. The discovery tool is offered by this listener and not left to
-    // the registry, because without it the whole on-demand tier is unreachable;
-    // `withActiveTools` inserts the wanted schemas at their sorted position and
-    // never duplicates or reorders an existing entry. Pins are wanted
-    // unconditionally — offered from the first step of every request, whatever
-    // the counters and the budget say — and a pin or activation may name a
-    // profile-plane tool, whose schema is found in `surface` and re-inserted.
+    // are kept. `withActiveTools` inserts the wanted schemas at their sorted
+    // position and never duplicates or reorders an existing entry. Pins are
+    // wanted unconditionally — offered from the first step of every request,
+    // whatever the counters and the budget say — and a pin or activation may
+    // name a profile-plane tool, whose schema is found in `surface` and
+    // re-inserted.
+    const defer = deferring(surface)
     const wanted = new Set(offeredNames())
     for (const pin of policy.pins) wanted.add(pin)
     wanted.add(SEARCH_TOOL_NAME)
-    const kept = result.tools.filter(
-      (tool) => wanted.has(tool.name) || !tool.name.startsWith('mcp__'),
-    )
+    const kept = defer
+      ? result.tools.filter(
+          (tool) => wanted.has(tool.name) || !tool.name.startsWith('mcp__'),
+        )
+      : result.tools
     const merged = withActiveTools(kept, [...surface, schemaOf(search)], wanted)
     // Identity is decided on the list this call produced, never on whether the
     // names this module wants have changed: the inner listeners rebuild the
@@ -1553,10 +1562,11 @@ function searchTools(
   limit: number,
 ): SearchMatch[] {
   const needle = query.toLowerCase()
+  const tokens = searchTokens(needle)
   const scored: { match: SearchMatch; score: number }[] = []
   for (const tool of available) {
     const description = typeof tool.description === 'string' ? tool.description : ''
-    const score = scoreTool(tool.name, description, needle)
+    const score = scoreTool(tool.name, description, needle, tokens)
     if (score === 0) continue
     scored.push({ match: { name: tool.name, description }, score })
   }
@@ -1564,13 +1574,46 @@ function searchTools(
   return scored.slice(0, limit).map((entry) => entry.match)
 }
 
-/** Score one candidate tool; `0` means no match. */
-function scoreTool(name: string, description: string, needle: string): number {
+/**
+ * Distinct words of a query, lowercased, in first-use order. Words shorter
+ * than two characters are dropped (a one-letter word is a substring of half
+ * the catalog and scores noise, not intent); the split keeps letters, digits
+ * and underscores, so a query may quote a tool name verbatim (`issue_update`)
+ * as well as name its concepts (`issue update`).
+ */
+function searchTokens(needle: string): string[] {
+  const tokens: string[] = []
+  const seen = new Set<string>()
+  for (const piece of needle.split(/[^\p{L}\p{N}_]+/u)) {
+    if (piece.length < 2 || seen.has(piece)) continue
+    seen.add(piece)
+    tokens.push(piece)
+    if (tokens.length >= MAX_SEARCH_TOKENS) break
+  }
+  return tokens
+}
+
+/**
+ * Score one candidate tool; `0` means no match. The whole query as one
+ * substring stays the strongest signal (an exact name beats a phrase that
+ * happens to sit inside a description), and every query word then adds its
+ * own hit — a word in the name outweighs the same word in the description.
+ * The per-word tier is what keeps a natural query like "issue get create
+ * update" useful: no tool contains that phrase, but the tools that contain
+ * most of its words are exactly the ones the model meant.
+ */
+function scoreTool(name: string, description: string, needle: string, tokens: readonly string[]): number {
   const lowerName = name.toLowerCase()
-  if (lowerName === needle) return 3
-  if (lowerName.includes(needle)) return 2
-  if (description.toLowerCase().includes(needle)) return 1
-  return 0
+  if (lowerName === needle) return 1_000
+  const lowerDescription = description.toLowerCase()
+  let score = 0
+  if (lowerName.includes(needle)) score += 500
+  else if (lowerDescription.includes(needle)) score += 250
+  for (const token of tokens) {
+    if (lowerName.includes(token)) score += 10
+    else if (lowerDescription.includes(token)) score += 1
+  }
+  return score
 }
 
 /** Code-unit name comparison, matching the canonical tool order of DSH. */

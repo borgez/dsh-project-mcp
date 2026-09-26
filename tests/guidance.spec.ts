@@ -1,7 +1,7 @@
 /**
- * Project-MCP guidance: the pure section builder (server order, tool sample
- * truncation, on-demand paragraph, hard length cap, `~`-collapsed project
- * label) and the agent-scope wiring the runtime installs.
+ * Project-MCP guidance: the pure section builder (server order, the flat
+ * deferred-names line, on-demand paragraph, hard length cap, `~`-collapsed
+ * project label) and the agent-scope wiring the runtime installs.
  *
  * The contract under test is deliberately narrow. The text is deterministic for
  * equal input, it never names an absolute path, it only calls a tool
@@ -19,8 +19,9 @@ import {
   DEFAULT_GUIDANCE_ENABLED,
   GUIDANCE_SECTION_NAME,
   MAX_GUIDANCE_CHARS,
+  MAX_GUIDANCE_MOST_USED,
   MAX_GUIDANCE_SERVERS,
-  MAX_GUIDANCE_TOOLS,
+  MAX_GUIDANCE_HIDDEN_NAMES,
   buildGuidance,
   installGuidance,
   projectLabel,
@@ -38,10 +39,12 @@ import {
   type AgentScopeLike,
   type RuntimeConfig,
 } from '../src/runtime.ts'
+import { UsageStore } from '../src/usage.ts'
 import { chainSchemas, fakeScopes } from './helpers/scopes.ts'
 import type { FakeScopes } from './helpers/scopes.ts'
 
 const created: string[] = []
+const AT = Date.UTC(2024, 4, 6, 7, 8, 9)
 
 afterEach(() => {
   for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true })
@@ -80,7 +83,8 @@ describe('buildGuidance', () => {
 
     expect(text.startsWith('## Project MCP servers\n')).toBe(true)
     expect(text).toContain('Project `project1` mounts 1 MCP server(s) in this session.')
-    expect(text).toContain('- tglider (stdio, active) — code intelligence: outline, search')
+    expect(text).toContain('- tglider (stdio, active) — code intelligence')
+    expect(text).toContain('On demand right now: outline, search')
     expect(text).toContain(`\`${SEARCH_TOOL_NAME}\``)
     expect(text).toContain('callable from the next step')
   })
@@ -103,26 +107,31 @@ describe('buildGuidance', () => {
     expect(text).not.toContain('— second')
   })
 
-  it('samples only tools that are actually deferred, with a deterministic truncation', () => {
-    const tools = ['t1', 't2', 't3', 't4', 't5', 't6']
+  it('lists the deferred surface as one flat names line, sorted and truncated', () => {
+    // Zero-padded so the code-unit sort order is the natural one.
+    const tools = Array.from({ length: 14 }, (_, index) => `n${String(index).padStart(2, '0')}`)
     const deferred = buildGuidance({
       servers: [server('memory', { tools })],
       offered: [],
       deferred: tools,
     })
 
-    expect(MAX_GUIDANCE_TOOLS).toBe(4)
-    expect(deferred).toContain(': t1, t2, t3, t4 +2 more')
+    expect(MAX_GUIDANCE_HIDDEN_NAMES).toBe(12)
+    expect(deferred).toContain(
+      `On demand right now: ${tools.slice(0, 12).join(', ')} +2 more`,
+    )
+    // The direct-call contract is named next to the list.
+    expect(deferred).toContain('`mcp__<server>__<tool>`')
 
-    // A tool that is offered directly is never presented as on demand, and a
-    // server with nothing deferred gets no sample at all.
+    // A tool that is offered directly is never presented as on demand, and
+    // with nothing deferred there is no names line at all.
     const offered = buildGuidance({
       servers: [server('memory', { tools: ['store'] })],
       offered: ['store'],
       deferred: ['store'],
     })
     expect(offered).toContain('- memory (stdio, active)')
-    expect(offered).not.toContain(': store')
+    expect(offered).not.toContain('On demand right now')
     expect(offered).not.toContain('on demand')
   })
 
@@ -138,6 +147,64 @@ describe('buildGuidance', () => {
     expect(text).toContain(`\`${SEARCH_TOOL_NAME}\``)
   })
 
+  it('tells the model to search once and report the gap instead of guessing', () => {
+    const text = buildGuidance({
+      servers: [server('memory', { tools: ['recall', 'store'] })],
+      offered: ['recall'],
+      deferred: ['store'],
+    })
+
+    // The anti-loop hint: one honest search, then the absence of a match is
+    // the answer — never an invented name. The invitation names keywords, not
+    // a description: the matcher scores every query word on its own (F-53).
+    expect(text).toContain('with a keyword or a tool name (several words are matched one by one)')
+    expect(text).toContain('Search once with the best keywords you have')
+    expect(text).toContain('report the gap instead of rephrasing the search or guessing a name')
+  })
+
+  it('names the counter-seeded hot tools at session start, most-called first', () => {
+    const text = buildGuidance({
+      servers: [server('memory', { tools: ['recall', 'store'] })],
+      offered: ['recall', 'store'],
+      mostUsed: ['store', 'recall'],
+    })
+
+    expect(text).toContain(
+      "Most used in this project's sessions, offered from the first step on: store, recall",
+    )
+    expect(text).toContain('call them directly, no search needed')
+  })
+
+  it('keeps the hot-tools line rank-ordered, deduped and sampled', () => {
+    const mostUsed = ['t5', 't1', 't5', 't2', ' t3 ', 't4', 't6']
+    const text = buildGuidance({
+      servers: [server('memory')],
+      offered: mostUsed,
+      mostUsed,
+    })
+
+    expect(MAX_GUIDANCE_MOST_USED).toBe(4)
+    // Insertion order is the rank order: no re-sorting, blanks and repeats out.
+    expect(text).toContain('t5, t1, t2, t3 +2 more')
+  })
+
+  it('drops the hot-tools line when activation is off or the baseline is empty', () => {
+    const disabled = buildGuidance({
+      servers: [server('memory')],
+      offered: ['recall'],
+      mostUsed: ['recall'],
+      activationEnabled: false,
+    })
+    expect(disabled).not.toContain('Most used')
+
+    const empty = buildGuidance({
+      servers: [server('memory')],
+      offered: ['recall'],
+      mostUsed: [],
+    })
+    expect(empty).not.toContain('Most used')
+  })
+
   it('drops the on-demand story when activation is off, keeping the mounts', () => {
     const text = buildGuidance({
       servers: [server('memory', { tools: ['recall'] })],
@@ -149,6 +216,7 @@ describe('buildGuidance', () => {
     expect(text).toContain('- memory (stdio, active)')
     expect(text).not.toContain(SEARCH_TOOL_NAME)
     expect(text).not.toContain('on demand')
+    expect(text).not.toContain('On demand right now')
     expect(DEFAULT_GUIDANCE_ENABLED).toBe(true)
   })
 
@@ -182,6 +250,9 @@ describe('buildGuidance', () => {
 
     expect(text.length).toBeLessThanOrEqual(MAX_GUIDANCE_CHARS)
     expect(text).toContain(`\`${SEARCH_TOOL_NAME}\``)
+    expect(text).toContain('On demand right now')
+    // 900 deferred entries dedupe to the 30 distinct names: 12 shown + 18 more.
+    expect(text).toContain('+18 more')
     expect(text).toContain('more server(s)')
     // Deterministic: the same crowded input renders the same bytes again.
     expect(buildGuidance({ project: 'project1', servers, deferred, offered: [] })).toBe(text)
@@ -508,11 +579,15 @@ function config(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   }
 }
 
-function runtimeFor(overrides: Partial<RuntimeConfig> = {}): ProjectMcpRuntime {
+function runtimeFor(
+  overrides: Partial<RuntimeConfig> = {},
+  options: { usage?: UsageStore } = {},
+): ProjectMcpRuntime {
   const scopes = scopesFor()
   return new ProjectMcpRuntime(fakeHost(scopes), config(overrides), {
     plugin: { name: 'fake-mcp', inject: ['tools'], apply: () => undefined },
     createScope: scopes.createScope,
+    ...(options.usage === undefined ? {} : { usage: options.usage }),
   })
 }
 
@@ -534,13 +609,42 @@ describe('runtime guidance wiring', () => {
 
     const text = textOf(section)
     expect(text).toContain('- alpha (stdio, active)')
-    expect(text).toContain(': tool')
+    expect(text).toContain('On demand right now: tool')
     expect(text).toContain(SEARCH_TOOL_NAME)
     // Privacy: the label is the directory name, never the absolute project root.
     expect(text).toContain(basename(project.root))
     expect(text).not.toContain(project.root)
 
     await runtime.disposeAll()
+  })
+
+  it('names the counter-seeded baseline in the live section at session start', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    const usageFile = join(mkdtempSync(join(tmpdir(), 'project-mcp-guidance-')), 'usage.json')
+    created.push(usageFile.slice(0, usageFile.lastIndexOf('/')))
+    const store = new UsageStore({ file: usageFile, flushMs: 60_000 })
+    for (let index = 0; index < 2; index += 1) {
+      store.record({
+        projectRoot: project.root,
+        serverName: 'alpha',
+        tool: 'tool',
+        isError: false,
+        at: AT + index,
+        sessionId: 'session-one',
+      })
+    }
+    const runtime = runtimeFor({ activationMinCalls: 2 }, { usage: store })
+    const ctx = new FakeAgentCtx()
+    runtime.attach(new FakeScope([fakeAgent('session-1', project.session, ctx)]))
+    await runtime.syncNow()
+
+    const text = textOf(ctx.systemPrompt.sections.get(GUIDANCE_SECTION_NAME))
+    expect(text).toContain(
+      "Most used in this project's sessions, offered from the first step on: tool",
+    )
+
+    await runtime.disposeAll()
+    store.dispose()
   })
 
   it('reflects the mounted set a later rescan changed, without re-registering', async () => {
@@ -610,6 +714,7 @@ describe('runtime guidance wiring', () => {
     const text = textOf(ctx.systemPrompt.sections.get(GUIDANCE_SECTION_NAME))
     expect(text).toContain('- alpha (stdio, active)')
     expect(text).not.toContain(SEARCH_TOOL_NAME)
+    expect(text).not.toContain('On demand right now')
 
     await runtime.disposeAll()
   })

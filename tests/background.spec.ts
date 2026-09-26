@@ -224,6 +224,8 @@ function applyHost(agent: AgentLike) {
     effect: () => {
       effectRegistered = true
     },
+    // The plugin subscribes to the loader's volatile-update event at boot.
+    on: () => undefined,
   }
   return { ctx: ctx as unknown as Context, provided, warnings, effectRegistered: () => effectRegistered }
 }

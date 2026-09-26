@@ -92,6 +92,7 @@ export {
   DEFAULT_SEARCH_LIMIT,
   DEFAULT_TOOL_IDLE_MS,
   MAX_SEARCH_LIMIT,
+  MAX_SEARCH_TOKENS,
   SEARCH_TOOL_NAME,
   activate,
   createActivationState,
@@ -124,7 +125,7 @@ export {
   MAX_GUIDANCE_CHARS,
   MAX_GUIDANCE_PURPOSE,
   MAX_GUIDANCE_SERVERS,
-  MAX_GUIDANCE_TOOLS,
+  MAX_GUIDANCE_HIDDEN_NAMES,
   buildGuidance,
   installGuidance,
   projectLabel,
@@ -173,7 +174,16 @@ export type {
   UsageStoreOptions,
 } from './usage.ts'
 
-/** Plugin config: everything two deployments may want to set differently. */
+/**
+ * Plugin config: everything two deployments may want to set differently.
+ *
+ * Live editing: on DSH ≥ 0.1.7 the keys of {@link VOLATILE_CONFIG_KEYS} arrive
+ * not as plain values but as volatile refs (`{ get(): T }`, see
+ * {@link VolatileLike}) that the host re-points on every profile edit and
+ * re-reads on `loader/volatile-update`. Every read of those keys goes through
+ * {@link liveValue}, which accepts both shapes, so a plain object — yaml
+ * config on an older host, and every test fixture — keeps working unchanged.
+ */
 export interface Config {
   /** Master switch; `false` mounts nothing and reads nothing. */
   enabled?: boolean
@@ -305,6 +315,86 @@ const DEFAULTS = {
 
 const nonEmptyString = z.string().min(1)
 
+/**
+ * The volatile-ref shape a DSH ≥ 0.1.7 host hands a volatile config field: a
+ * stable reference whose `get()` reads the current, live-edited value.
+ * Declared locally so no cordis version is needed to name it; an older host
+ * passes the plain value instead, which {@link liveValue} also accepts.
+ */
+interface VolatileLike<T> {
+  get(): T
+}
+
+// The loader's event typing ships with `@deepseek-ai/cordis-plugin-loader`,
+// which this plugin does not depend on; declaring the one event it listens to
+// keeps the dependency surface unchanged. The signature matches the loader's
+// own augmentation, so both merge cleanly where the loader's types are loaded.
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Volatile config values were committed into the running fiber without a
+     * remount; dispatched to the owning fiber only.
+     * @param paths - changed config paths as key arrays.
+     */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}
+
+/**
+ * Mark a config field volatile — live-editable from Plugins → dsh-project-mcp
+ * on DSH ≥ 0.1.7 — when the installed schemastery knows the flag. An older
+ * schemastery at runtime gets the schema back unchanged, and the field stays
+ * yaml-only there.
+ */
+function volatileField<S>(schema: S): S {
+  const mark = (schema as unknown as { volatile?: unknown }).volatile
+  if (typeof mark !== 'function') return schema
+  return (mark as (this: unknown) => S).call(schema)
+}
+
+/**
+ * Read one config field that may be a live-edited volatile ref.
+ * @param field - plain value, or a {@link VolatileLike} ref wrapping it.
+ * @returns the current value, whichever shape arrived.
+ */
+export function liveValue<T>(field: T | VolatileLike<T> | undefined): T | undefined {
+  if (
+    typeof field === 'object' &&
+    field !== null &&
+    typeof (field as VolatileLike<T>).get === 'function'
+  ) {
+    return (field as VolatileLike<T>).get()
+  }
+  return field as T | undefined
+}
+
+/**
+ * The {@link Config} keys a DSH ≥ 0.1.7 host may live-edit without restarting
+ * the entry: all of them are read at use time, so merging them into the
+ * running config is safe. Every other key is structural or boot-time
+ * (documents, markers, credentials, the watch switch) and stays yaml-only.
+ */
+export const VOLATILE_CONFIG_KEYS: readonly (keyof RuntimeConfig)[] = [
+  'activationEnabled',
+  'activationSeeded',
+  'activationMinCalls',
+  'toolIdleMs',
+  'guidanceEnabled',
+  'activationAutoLimit',
+  'activationAutoStickySteps',
+  'activationToolBudgetChars',
+  'allowGlobalWrite',
+  'envFiles',
+  'lazy',
+  'localPrefix',
+  'profileWins',
+  'connectTimeoutMs',
+  'toolCallTimeoutMs',
+  'idleTimeoutMs',
+  'debounceMs',
+  'activationWaitMs',
+]
+
 /** Validated Loader schema for {@link Config}. */
 export const Config: z<Config> = z.object({
   enabled: z.boolean().default(DEFAULTS.enabled),
@@ -313,31 +403,41 @@ export const Config: z<Config> = z.object({
   // carrying the boolean this key used to be validates instead of failing the
   // entry, and `configuredFiles` reads its intent.
   globalFiles: z.union([z.array(nonEmptyString), z.boolean()]).default([...DEFAULT_GLOBAL_FILES]),
-  envFiles: z.boolean().default(DEFAULTS.envFiles),
+  envFiles: volatileField(z.boolean().default(DEFAULTS.envFiles)),
   inputs: z.dict(String).default({}),
   projectMarkers: z.array(nonEmptyString).default([...DEFAULT_PROJECT_MARKERS]),
   fileMarkers: z.array(nonEmptyString).default([...DEFAULT_FILE_MARKERS]),
-  toolCallTimeoutMs: z.number().step(1).min(1).default(DEFAULTS.toolCallTimeoutMs),
+  toolCallTimeoutMs: volatileField(z.number().step(1).min(1).default(DEFAULTS.toolCallTimeoutMs)),
   failOnStartupError: z.boolean().default(DEFAULTS.failOnStartupError),
-  connectTimeoutMs: z.number().step(1).min(0).default(DEFAULTS.connectTimeoutMs),
-  lazy: z.boolean().default(DEFAULTS.lazy),
-  idleTimeoutMs: z.number().step(1).min(0).default(DEFAULTS.idleTimeoutMs),
-  activationWaitMs: z.number().step(1).min(0).max(30_000).default(DEFAULTS.activationWaitMs),
-  profileWins: z.boolean().default(DEFAULTS.profileWins),
-  localPrefix: z.string().default(DEFAULTS.localPrefix),
+  connectTimeoutMs: volatileField(z.number().step(1).min(0).default(DEFAULTS.connectTimeoutMs)),
+  lazy: volatileField(z.boolean().default(DEFAULTS.lazy)),
+  idleTimeoutMs: volatileField(z.number().step(1).min(0).default(DEFAULTS.idleTimeoutMs)),
+  activationWaitMs: volatileField(
+    z.number().step(1).min(0).max(30_000).default(DEFAULTS.activationWaitMs),
+  ),
+  profileWins: volatileField(z.boolean().default(DEFAULTS.profileWins)),
+  localPrefix: volatileField(z.string().default(DEFAULTS.localPrefix)),
   watch: z.boolean().default(DEFAULTS.watch),
-  debounceMs: z.number().step(1).min(0).max(60_000).default(DEFAULTS.debounceMs),
+  debounceMs: volatileField(z.number().step(1).min(0).max(60_000).default(DEFAULTS.debounceMs)),
   rescanIntervalMs: z.number().step(1).min(1_000).default(DEFAULTS.rescanIntervalMs),
   credentialsFile: z.string().default(''),
-  activationEnabled: z.boolean().default(DEFAULTS.activationEnabled),
-  activationSeeded: z.number().step(1).min(0).default(DEFAULTS.activationSeeded),
-  activationMinCalls: z.number().step(1).min(0).default(DEFAULTS.activationMinCalls),
-  toolIdleMs: z.number().step(1).min(0).default(DEFAULTS.toolIdleMs),
-  guidanceEnabled: z.boolean().default(DEFAULTS.guidanceEnabled),
-  activationAutoLimit: z.number().step(1).min(0).default(DEFAULTS.activationAutoLimit),
-  activationAutoStickySteps: z.number().step(1).min(0).default(DEFAULTS.activationAutoStickySteps),
-  activationToolBudgetChars: z.number().step(1).min(0).default(DEFAULTS.activationToolBudgetChars),
-  allowGlobalWrite: z.boolean().default(DEFAULTS.allowGlobalWrite),
+  activationEnabled: volatileField(z.boolean().default(DEFAULTS.activationEnabled)),
+  activationSeeded: volatileField(z.number().step(1).min(0).default(DEFAULTS.activationSeeded)),
+  activationMinCalls: volatileField(
+    z.number().step(1).min(0).default(DEFAULTS.activationMinCalls),
+  ),
+  toolIdleMs: volatileField(z.number().step(1).min(0).default(DEFAULTS.toolIdleMs)),
+  guidanceEnabled: volatileField(z.boolean().default(DEFAULTS.guidanceEnabled)),
+  activationAutoLimit: volatileField(
+    z.number().step(1).min(0).default(DEFAULTS.activationAutoLimit),
+  ),
+  activationAutoStickySteps: volatileField(
+    z.number().step(1).min(0).default(DEFAULTS.activationAutoStickySteps),
+  ),
+  activationToolBudgetChars: volatileField(
+    z.number().step(1).min(0).default(DEFAULTS.activationToolBudgetChars),
+  ),
+  allowGlobalWrite: volatileField(z.boolean().default(DEFAULTS.allowGlobalWrite)),
 })
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -430,6 +530,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // counters, so it is loaded once here and published by the same runtime.
   const policy = new PolicyStore({ logger: ctx.logger })
   const runtime = new ProjectMcpRuntime(ctx, resolveConfig(config), { usage, policy })
+  // A volatile-capable host (DSH ≥ 0.1.7) re-points the volatile refs inside
+  // `config` on every profile edit and announces it here instead of restarting
+  // the entry; an older host never emits the event, so this subscribes
+  // unconditionally. `resolveConfig` re-reads the refs through `liveValue`,
+  // and the runtime merges only the volatile keys.
+  ctx.on('loader/volatile-update', () => {
+    runtime.applyLiveConfig(resolveConfig(config))
+  })
   const service: ProjectMcpService = {
     snapshot: () => runtime.snapshot(),
     syncNow: (projectRoot) => runtime.syncNow(projectRoot),
@@ -543,34 +651,35 @@ export function resolveConfig(config: Config): RuntimeConfig {
     // The only key whose boolean is legacy: it used to switch the DSH home
     // document on, so that is what `true` keeps meaning here.
     globalFiles: configuredFiles(config.globalFiles, DEFAULTS.globalFiles, ['$DSH_HOME/mcp.json']),
-    envFiles: config.envFiles ?? DEFAULTS.envFiles,
+    envFiles: liveValue(config.envFiles) ?? DEFAULTS.envFiles,
     inputs: config.inputs ?? {},
     projectMarkers: [...(config.projectMarkers ?? DEFAULT_PROJECT_MARKERS)],
     fileMarkers: [...(config.fileMarkers ?? DEFAULT_FILE_MARKERS)],
-    toolCallTimeoutMs: config.toolCallTimeoutMs ?? DEFAULTS.toolCallTimeoutMs,
+    toolCallTimeoutMs: liveValue(config.toolCallTimeoutMs) ?? DEFAULTS.toolCallTimeoutMs,
     failOnStartupError: config.failOnStartupError ?? DEFAULTS.failOnStartupError,
-    connectTimeoutMs: config.connectTimeoutMs ?? DEFAULTS.connectTimeoutMs,
-    lazy: config.lazy ?? DEFAULTS.lazy,
-    idleTimeoutMs: config.idleTimeoutMs ?? DEFAULTS.idleTimeoutMs,
-    activationWaitMs: config.activationWaitMs ?? DEFAULTS.activationWaitMs,
-    profileWins: config.profileWins ?? DEFAULTS.profileWins,
-    localPrefix: localPrefixOf(config.localPrefix),
+    connectTimeoutMs: liveValue(config.connectTimeoutMs) ?? DEFAULTS.connectTimeoutMs,
+    lazy: liveValue(config.lazy) ?? DEFAULTS.lazy,
+    idleTimeoutMs: liveValue(config.idleTimeoutMs) ?? DEFAULTS.idleTimeoutMs,
+    activationWaitMs: liveValue(config.activationWaitMs) ?? DEFAULTS.activationWaitMs,
+    profileWins: liveValue(config.profileWins) ?? DEFAULTS.profileWins,
+    localPrefix: localPrefixOf(liveValue(config.localPrefix)),
     watch: config.watch ?? DEFAULTS.watch,
-    debounceMs: config.debounceMs ?? DEFAULTS.debounceMs,
+    debounceMs: liveValue(config.debounceMs) ?? DEFAULTS.debounceMs,
     rescanIntervalMs: config.rescanIntervalMs ?? DEFAULTS.rescanIntervalMs,
     credentialsFile:
       config.credentialsFile !== undefined && config.credentialsFile !== ''
         ? config.credentialsFile
         : defaultCredentialsPath(),
-    activationEnabled: config.activationEnabled ?? DEFAULTS.activationEnabled,
-    activationSeeded: config.activationSeeded ?? DEFAULTS.activationSeeded,
-    activationMinCalls: config.activationMinCalls ?? DEFAULTS.activationMinCalls,
-    toolIdleMs: config.toolIdleMs ?? DEFAULTS.toolIdleMs,
-    guidanceEnabled: config.guidanceEnabled ?? DEFAULTS.guidanceEnabled,
-    activationAutoLimit: config.activationAutoLimit ?? DEFAULTS.activationAutoLimit,
-    activationAutoStickySteps: config.activationAutoStickySteps ?? DEFAULTS.activationAutoStickySteps,
+    activationEnabled: liveValue(config.activationEnabled) ?? DEFAULTS.activationEnabled,
+    activationSeeded: liveValue(config.activationSeeded) ?? DEFAULTS.activationSeeded,
+    activationMinCalls: liveValue(config.activationMinCalls) ?? DEFAULTS.activationMinCalls,
+    toolIdleMs: liveValue(config.toolIdleMs) ?? DEFAULTS.toolIdleMs,
+    guidanceEnabled: liveValue(config.guidanceEnabled) ?? DEFAULTS.guidanceEnabled,
+    activationAutoLimit: liveValue(config.activationAutoLimit) ?? DEFAULTS.activationAutoLimit,
+    activationAutoStickySteps:
+      liveValue(config.activationAutoStickySteps) ?? DEFAULTS.activationAutoStickySteps,
     activationToolBudgetChars:
-      config.activationToolBudgetChars ?? DEFAULTS.activationToolBudgetChars,
-    allowGlobalWrite: config.allowGlobalWrite ?? DEFAULTS.allowGlobalWrite,
+      liveValue(config.activationToolBudgetChars) ?? DEFAULTS.activationToolBudgetChars,
+    allowGlobalWrite: liveValue(config.allowGlobalWrite) ?? DEFAULTS.allowGlobalWrite,
   }
 }

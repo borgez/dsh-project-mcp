@@ -19,6 +19,7 @@ import {
   DEFAULT_ACTIVATION_MIN_CALLS,
   DEFAULT_ACTIVATION_SEEDED,
   DEFAULT_SEARCH_LIMIT,
+  MAX_SEARCH_TOKENS,
   SEARCH_TOOL_NAME,
   activate,
   advanceAutoOffer,
@@ -264,6 +265,61 @@ describe('mcp_search_tools definition', () => {
     expect(nothing.matches).toEqual([])
     expect(nothing.activated).toEqual([])
     expect(nothing.message).toContain('no MCP tool')
+  })
+
+  it('matches a multi-word query word by word, most word hits first', async () => {
+    const activated: string[] = []
+    const definition = searchFor(
+      [
+        tool('mcp__lite__yandex_tracker-board_get', 'Get a single agile board'),
+        tool('mcp__lite__yandex_tracker-issue_get', 'Get a single issue'),
+        tool('mcp__lite__yandex_tracker-issue_create', 'Create an issue'),
+        tool('mcp__lite__yandex_tracker-issue_update', 'Update fields of an issue'),
+        tool('mcp__grafana__query_prometheus', 'Run a PromQL query'),
+      ],
+      activated,
+    )
+
+    // The phrase itself sits in no name or description — the pre-F-53
+    // whole-substring matcher answered it with "no match" even though the
+    // exact tools exist — but every word of it scores on its own.
+    const found = (await definition.execute(
+      { query: 'issue get create update yandex tracker' },
+      undefined,
+    )) as SearchValue
+    expect(found.activated).toEqual([
+      'mcp__lite__yandex_tracker-issue_create',
+      'mcp__lite__yandex_tracker-issue_get',
+      'mcp__lite__yandex_tracker-issue_update',
+      'mcp__lite__yandex_tracker-board_get',
+    ])
+  })
+
+  it('weighs a name word above a description word and ignores one-letter words', async () => {
+    const definition = searchFor(
+      [
+        tool('mcp__a__deploy', 'Deploy the service'),
+        tool('mcp__b__release', 'Build and deploy an artifact'),
+      ],
+      [],
+    )
+
+    // "a" is dropped (shorter than two characters); "deploy" in the name
+    // outranks "deploy" in a description.
+    const found = (await definition.execute({ query: 'a deploy' }, undefined)) as SearchValue
+    expect(found.activated).toEqual(['mcp__a__deploy', 'mcp__b__release'])
+  })
+
+  it('scores at most MAX_SEARCH_TOKENS distinct words of a query', async () => {
+    const definition = searchFor([tool('mcp__a__ninth', '')], [])
+
+    // Only the ninth word would match — and the cap keeps the first eight.
+    const beyond = (await definition.execute(
+      { query: 'one two three four five six seven eight ninth' },
+      undefined,
+    )) as SearchValue
+    expect(beyond.matches).toEqual([])
+    expect(MAX_SEARCH_TOKENS).toBe(8)
   })
 
   it('caps the matches it activates and rejects an empty query', async () => {
@@ -663,8 +719,8 @@ describe('agent-scope wiring', () => {
     let state = createActivationState(['mcp__a__one'])
     wiring(ctx, () => state, (next) => void (state = next), () => available)
 
-    // Only the baseline name is active: the merge returns the continuation's
-    // own value (a new assembly object carrying the added schema).
+    // Only the baseline name is active: the merge returns a new assembly object
+    // carrying the added schema (and the pinned discovery tool).
     const withBaseline = await ctx.assemble()
     expect(names(withBaseline.tools)).toEqual(['mcp__a__one'])
     expect(withBaseline).not.toBe(ctx.lastInner)
@@ -797,14 +853,21 @@ describe('agent-scope wiring', () => {
     const whole = [project, profile]
     const mergedChars = surfaceChars(whole)
 
-    // Inside the budget: the listener hands the inner assembly back by identity.
+    // Inside the budget: no tool is dropped, but the discovery tool is pinned —
+    // it appears in every disclosure assembly, so the listener rebuilds the
+    // list rather than handing the inner assembly back by identity.
     const fits = new FakeAgentCtx()
     fits.innerTools = [profile]
     wiring(fits, () => createActivationState(), () => undefined, () => [project], {
       visible: () => whole,
       toolBudgetChars: mergedChars, // the merged surface fits exactly
     })
-    expect(await fits.assemble()).toBe(fits.lastInner)
+    const fitsAssembly = await fits.assemble()
+    expect(fitsAssembly).not.toBe(fits.lastInner)
+    expect(fitsAssembly.tools.map((schema) => schema.name).sort()).toEqual([
+      'mcp__beta__run',
+      SEARCH_TOOL_NAME,
+    ])
 
     // One character over: the profile tool is dropped, the non-MCP tool survives,
     // and the discovery tool is still offered.
@@ -851,9 +914,9 @@ describe('agent-scope wiring', () => {
     // A leaked inner assembly carries another project's tool. `direct` filters
     // nothing and `off` drops only the project plane, so containment is the only
     // thing that removes the foreign name there; `disclosure` under the budget
-    // hands the assembly back whole, so containment is the only thing that
-    // removes it there too. The session's own profile-plane name survives every
-    // mode.
+    // keeps every visible tool and adds the pinned discovery tool, so containment
+    // is the only thing that removes the foreign name there too. The session's
+    // own profile-plane name survives every mode.
     const assembled = async (mode: ToolMode): Promise<string[]> => {
       const ctx = new FakeAgentCtx()
       ctx.innerTools = [...whole]
@@ -1182,14 +1245,20 @@ describe('runtime wiring', () => {
     const betaSchema = tool('mcp__beta__run')
     const mergedChars = surfaceChars([alphaSchema, betaSchema])
 
-    // One above the merged surface: the listener hands the inner assembly back by
-    // identity (nothing deferred, nothing trimmed).
+    // One above the merged surface: no tool is dropped, but the discovery tool
+    // is pinned — it appears in every disclosure assembly, so the listener
+    // rebuilds the list rather than handing the inner assembly back by identity.
     const fits = runtimeFor({ activationToolBudgetChars: mergedChars + 1 })
     const ctxFits = new FakeAgentCtx()
     ctxFits.extraSchemas.add('mcp__beta__run')
     fits.attach(new FakeScope([fakeAgent('session-1', project.session, ctxFits)]))
     await fits.syncNow()
-    expect(await ctxFits.assemble()).toBe(ctxFits.lastInner)
+    const fitsAssembly = await ctxFits.assemble()
+    expect(fitsAssembly).not.toBe(ctxFits.lastInner)
+    // The inner assembly is empty (the fake "presentation plugin filtered
+    // everything away"); with the surface fitting the budget nothing is
+    // deferred, so the only addition is the pinned discovery tool.
+    expect(fitsAssembly.tools.map((schema) => schema.name)).toEqual([SEARCH_TOOL_NAME])
     await fits.disposeAll()
 
     // One below: the profile-plane name is over budget, so it is deferred — the

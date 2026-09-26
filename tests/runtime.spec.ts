@@ -835,8 +835,14 @@ describe('ProjectMcpRuntime', () => {
     const beta = { name: 'mcp__beta__tool', description: '', parameters: {} }
     const leak = [alpha, beta]
 
-    expect((await assemble(a.ctx, leak)).map((schema) => schema.name)).toEqual(['mcp__alpha__tool'])
-    expect((await assemble(b.ctx, leak)).map((schema) => schema.name)).toEqual(['mcp__beta__tool'])
+    expect((await assemble(a.ctx, leak)).map((schema) => schema.name)).toEqual([
+      'mcp__alpha__tool',
+      'mcp_search_tools',
+    ])
+    expect((await assemble(b.ctx, leak)).map((schema) => schema.name)).toEqual([
+      'mcp__beta__tool',
+      'mcp_search_tools',
+    ])
     // Both projects are mounted in the one runtime, as the foreign computation
     // requires — the containment is per-session, not a process-wide cut.
     expect(scopes.projects).toHaveLength(2)
@@ -1288,6 +1294,97 @@ describe('ProjectMcpRuntime', () => {
     expect(offered?.deferredChars).toBe(0)
     expect(offered?.visibleChars).toBe(offered?.surfaceChars)
     await runtime.disposeAll()
+  })
+})
+
+describe('applyLiveConfig (F-53)', () => {
+  it('moves the activation gate the next snapshot reads', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    // A zero budget defers the whole surface while activation is on, so the
+    // session row starts with the mounted tool hidden.
+    const { runtime } = harness([], { activationEnabled: true, activationToolBudgetChars: 0 })
+    const { agent } = fakeAgent('session-1', project.session)
+    runtime.attach(new FakeScope([agent]))
+    await runtime.syncNow()
+    await waitFor(() => runtime.snapshot().projects[0]?.rows[0]?.status === 'active')
+
+    const before = runtime.snapshot().projects[0]?.sessions[0]?.tools
+    expect(before?.deferring).toBe(true)
+    expect(before?.deferred).toEqual(['mcp__alpha__tool'])
+
+    // The live edit: the host re-resolved the volatile refs and the merge
+    // flips the gate; the next snapshot offers the whole surface directly.
+    runtime.applyLiveConfig(config({ activationEnabled: false, activationToolBudgetChars: 0 }))
+    const after = runtime.snapshot().projects[0]?.sessions[0]?.tools
+    expect(after?.deferring).toBe(false)
+    expect(after?.deferred).toEqual([])
+    await runtime.disposeAll()
+  })
+
+  it('merges only the volatile keys; structural keys keep their boot values', async () => {
+    const { runtime } = harness([], { watch: false, idleTimeoutMs: 0 })
+    runtime.attach(new FakeScope([]))
+    const merged = (runtime as unknown as { config: RuntimeConfig }).config
+
+    runtime.applyLiveConfig(
+      config({
+        idleTimeoutMs: 9_000,
+        localFiles: ['other.json'],
+        watch: true,
+        credentialsFile: '/elsewhere/.credentials.yaml',
+      }),
+    )
+    expect(merged.idleTimeoutMs).toBe(9_000)
+    // None of the structural keys moved — not even `watch`, which is yaml-only
+    // and therefore never re-armed from a live merge.
+    expect(merged.localFiles).toEqual(['.dsh/mcp.json'])
+    expect(merged.watch).toBe(false)
+    expect(merged.credentialsFile).toBe('/definitely/missing/.credentials.yaml')
+
+    // An `undefined` in the re-resolved config leaves the merged value alone.
+    runtime.applyLiveConfig({ ...config(), idleTimeoutMs: undefined } as unknown as RuntimeConfig)
+    expect(merged.idleTimeoutMs).toBe(9_000)
+    await runtime.disposeAll()
+  })
+
+  it('arms the safety-net timer on 0→N and clears it on N→0 when watch is off', async () => {
+    vi.useFakeTimers()
+    try {
+      const { runtime } = harness([], { watch: false, idleTimeoutMs: 0 })
+      runtime.attach(new FakeScope([]))
+      // Flush the attach pass's debounce, so only the interval counts below.
+      await vi.advanceTimersByTimeAsync(0)
+      const idle = vi.getTimerCount()
+
+      runtime.applyLiveConfig(config({ watch: false, idleTimeoutMs: 5_000 }))
+      expect(vi.getTimerCount()).toBe(idle + 1)
+
+      runtime.applyLiveConfig(config({ watch: false, idleTimeoutMs: 0 }))
+      expect(vi.getTimerCount()).toBe(idle)
+      await runtime.disposeAll()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not arm the timer before attach; attach arms from the merged value', async () => {
+    vi.useFakeTimers()
+    try {
+      const { runtime } = harness([], { watch: false, idleTimeoutMs: 0 })
+      // A volatile update may land before the scope attaches: the merge lands,
+      // but arming is `attach`'s job, so no interval leaks here.
+      runtime.applyLiveConfig(config({ watch: false, idleTimeoutMs: 5_000 }))
+      expect(vi.getTimerCount()).toBe(0)
+
+      runtime.attach(new FakeScope([]))
+      await vi.advanceTimersByTimeAsync(0)
+      // Exactly one interval — attach armed from the merged config, and the
+      // pre-attach merge did not leave a second one behind.
+      expect(vi.getTimerCount()).toBe(1)
+      await runtime.disposeAll()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

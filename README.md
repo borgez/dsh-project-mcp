@@ -181,6 +181,22 @@ Plugin config is the `cordis.patch.yml` row (defaults shown):
     fileMarkers: ['.sln', '.slnx', '.csproj']
 ```
 
+### Live editing
+
+On DSH ≥ 0.1.7 the keys below are **volatile**: the host serves them as a
+config form, an edit commits into the running plugin without a restart, and the
+runtime picks the new value up on the loader's `loader/volatile-update` event.
+Every other key — `localFiles`, `globalFiles`, `inputs`, the marker lists,
+`failOnStartupError`, `watch`, `credentialsFile` — is structural and still
+needs a remount (restart or config reload) to take effect. An older host just
+hands over plain values, and nothing about the boot path changes.
+
+Volatile keys: `activationEnabled`, `activationSeeded`, `activationMinCalls`,
+`toolIdleMs`, `guidanceEnabled`, `activationAutoLimit`,
+`activationAutoStickySteps`, `activationToolBudgetChars`, `allowGlobalWrite`,
+`envFiles`, `lazy`, `localPrefix`, `profileWins`, `connectTimeoutMs`,
+`toolCallTimeoutMs`, `idleTimeoutMs`, `debounceMs`, `activationWaitMs`.
+
 ### `profileWins`
 
 - `true` (default) — a project entry whose `serverName` is already live in the
@@ -342,10 +358,9 @@ deployment wants, without touching the registry (this is the `disclosure` mode o
   measured as the request would carry them — name, description and serialized
   parameters. If that total is at or below `activationToolBudgetChars` (default
   `40000`, roughly 10K tokens) every tool is offered exactly as the rest of the
-  harness assembled it, and not even `mcp_search_tools` is added: hiding a few
-  tools to save nothing would rewrite the prompt prefix and cost the model its
-  cache. `0` switches the gate off and defers every surface. The counters keep
-  accumulating either way, so the decision follows a project as it grows.
+  harness assembled it. `0` switches the gate off and defers every surface.
+  The counters keep accumulating either way, so the decision follows a project
+  as it grows.
 - **The offered set is sticky, so it rarely changes.** A name stays offered for
   the task text that offered it plus `activationAutoStickySteps` (default 2)
   later messages, one input per recomputation, so several steps share one tool
@@ -358,11 +373,21 @@ deployment wants, without touching the registry (this is the `disclosure` mode o
 - **The rest are found, not listed.** The plugin registers `mcp_search_tools` in
   the session's own scope and also offers it from its own assembly listener — a
   presentation plugin that trims the list to an allowlist would otherwise drop
-  the one tool that makes the deferred layer reachable. A call searches the MCP
-  tools of *this project* — never a profile-level tool or another project's
-  server — activates up to `limit` (default 8) matches, and returns their names
-  and descriptions. The activated tools join the offered list from the **next**
-  model step on; only the tools already listed are reliable until then.
+  the one tool that makes the deferred layer reachable. The discovery tool is
+  **pinned**: it appears in every `disclosure` assembly, whatever the budget
+  says, so the model can always discover tools as the project grows. A call
+  searches the MCP tools of *this project* — never a profile-level tool or
+  another project's server — activates up to `limit` (default 8) matches, and
+  returns their names and descriptions. The query matches case-insensitively
+  and **word by word**: the whole query as one substring of a name or
+  description ranks highest, and every word of it then scores its own hit (a
+  word in a name outweighs the same word in a description; words shorter than
+  two characters are ignored, and only the first eight distinct words count),
+  so `issue get create update` finds `…-issue_get`, `…-issue_create` and
+  `…-issue_update` even though no tool contains that phrase verbatim. The
+  activated tools join the offered
+  list from the **next** model step on; only the tools already listed are
+  reliable until then.
 - **Everything falls away again.** A session-activated tool that is not called
   within `toolIdleMs` (default 30 minutes) is dropped at the next `agent/status`
   transition, and a `compaction/end` clears the session's activations and the
@@ -420,19 +445,48 @@ says exactly that, next to the mounts it describes:
 
 Project `project1` mounts 2 MCP server(s) in this session.
 
-- memory (stdio, active): recall, store
-- tglider (stdio, active) — code intelligence: find_symbol, outline, references, search +12 more
+- memory (stdio, active)
+- tglider (stdio, active) — code intelligence
+
+Most used in this project's sessions, offered from the first step on: recall,
+find_symbol — call them directly, no search needed.
 
 3 of 14 MCP tool(s) are offered directly; the other 11 are offered on demand —
-call `mcp_search_tools` with a short description of what you need, and a tool
-it activates becomes callable from the next step.
+call `mcp_search_tools` with a keyword or a tool name (several words are
+matched one by one), and a tool it activates becomes callable from the next
+step. Search once with the best keywords you have; when the search reports no
+match, this project mounts no such tool — report the gap instead of rephrasing
+the search or guessing a name.
+
+On demand right now: batch_rename, changed_symbols, diagnostics, find_callers
++7 more — every one of them runs when called by its exact full name
+`mcp__<server>__<tool>`; search a name with `mcp_search_tools` first to see its
+description and parameters.
 ```
 
-- **Deterministic and bounded.** Servers are listed in code-unit name order and
-  each tool sample is sorted, takes only tools the session actually defers, and
-  stops at four names with `+N more`. The whole section is capped at 1200
-  characters, so an extreme project loses trailing server bullets (folded into
-  `… and N more server(s)`) before it loses the on-demand instruction.
+- **Deterministic and bounded.** Servers are listed in code-unit name order,
+  and the deferred surface is one flat names line — sorted, deduped, capped at
+  twelve names with `+N more`. The whole section is capped at 1200 characters,
+  so an extreme project loses trailing server bullets (folded into
+  `… and N more server(s)`) before it loses the on-demand instruction and the
+  names line.
+- **A names line instead of schemas.** Descriptions and parameters are the
+  expensive part, so the section lists bare names only: the model picks the
+  tool it needs and runs one targeted `mcp_search_tools` query instead of
+  probing blindly. The line also states the direct-call contract — deferral
+  trims the assembled request list, it never unregisters the tool, so a call by
+  the exact full name `mcp__<server>__<tool>` still executes; searching first
+  is how the model sees the description and parameters, not a gate.
+- **A most-used line from the durable counters.** When the seeded baseline is
+  non-empty, the section names the project's hot tools (most-called first, up
+  to four names with `+N more`) and says they are offered from the first step
+  on — so the model calls them directly instead of searching for what it
+  already has. With `activationEnabled: false` the line is dropped, like the
+  rest of the activation story.
+- **An anti-loop hint.** The on-demand paragraph ends with the search
+  etiquette: one search with the best description at hand, and a no-match
+  answer means the project mounts no such tool — report the gap instead of
+  rephrasing the search or inventing a name.
 - **Placed with the MCP sections.** The section is registered through
   `ctx.inject(['systemPrompt'], …)` at the `MCP_SERVERS` order, with a name
   (`mcp-project-guidance`) whose code-unit order precedes every `mcp:<server>`
@@ -450,7 +504,8 @@ it activates becomes callable from the next step.
 
 `guidanceEnabled: false` registers no section at all. With `activationEnabled:
 false` the section still lists the mounts but drops the on-demand paragraph,
-because nothing is deferred.
+the names line and the most-used line, because nothing is deferred and nothing
+is seeded.
 
 ## Lazy mounting and idle release
 

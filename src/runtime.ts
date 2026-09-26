@@ -64,6 +64,10 @@ import {
   projectLabel,
 } from './guidance.ts'
 import type { GuidanceContextLike, GuidanceServer } from './guidance.ts'
+// The volatile key list lives at the entry (`src/index.ts`) because the schema
+// declares it; the import cycles back here, but it is read only inside
+// `applyLiveConfig`, long after both modules finished evaluating.
+import { VOLATILE_CONFIG_KEYS } from './index.ts'
 import { LOG_PAGE_SIZE, countForSession, countOf, latest } from './logs.ts'
 import { emitEvent, logConsumer, subscribeEvent } from './notifications.ts'
 import type { PluginEvent } from './notifications.ts'
@@ -883,6 +887,47 @@ export class ProjectMcpRuntime {
       this.timer.unref?.()
     }
     this.schedule('attach')
+  }
+
+  /**
+   * Merge one live-edited config into the running one.
+   *
+   * A DSH ≥ 0.1.7 host serves the volatile config keys as a profile-backed
+   * form and re-resolves them on `loader/volatile-update` instead of
+   * restarting the entry. Only those keys are taken from `next` — every other
+   * key (documents, markers, credentials, the watch switch) stays whatever the
+   * entry booted with, because nothing here re-reads it safely at runtime.
+   * All volatile keys are consumed at use time, so the merge alone moves the
+   * behavior.
+   *
+   * The one exception is the safety-net tick: it is armed once in
+   * {@link ProjectMcpRuntime.attach}, yet its need — `watch || idleTimeoutMs
+   * > 0` — flips with a live edit of `idleTimeoutMs`, so it is re-armed or
+   * cleared here. Arming is reserved to an attached runtime: before
+   * `attach()` the merge alone is enough, because `attach()` arms from the
+   * merged values; after disposal nothing may come back.
+   *
+   * @param next - the freshly resolved config; only the volatile keys are read.
+   */
+  applyLiveConfig(next: RuntimeConfig): void {
+    const target = this.config as Record<keyof RuntimeConfig, unknown>
+    for (const key of VOLATILE_CONFIG_KEYS) {
+      const value = next[key]
+      if (value !== undefined) target[key] = value
+    }
+    if (this.timer !== undefined && !this.config.watch && this.config.idleTimeoutMs === 0) {
+      clearInterval(this.timer)
+      this.timer = undefined
+    } else if (
+      this.timer === undefined &&
+      this.ready &&
+      !this.disposed &&
+      (this.config.watch || this.config.idleTimeoutMs > 0)
+    ) {
+      this.timer = setInterval(() => this.schedule('rescan'), this.config.rescanIntervalMs)
+      // A rescan timer must not keep a headless DSH process alive on its own.
+      this.timer.unref?.()
+    }
   }
 
   /**
@@ -3126,11 +3171,22 @@ export class ProjectMcpRuntime {
         ...(mount.transport === undefined ? {} : { transport: mount.transport }),
         tools: toolsByServer.get(mount.runtimeName) ?? [],
       }))
+      // The seeded baseline's insertion order is the usage rank order
+      // (most-called first); keep it and strip the server prefix, so the
+      // guidance names the session's hot tools like every other short name.
+      const mostUsed: string[] = []
+      if (activationEnabled) {
+        for (const fullName of this.seedActivation(state).baseline) {
+          const server = matchServer(fullName, mounted)
+          if (server !== undefined) mostUsed.push(fullName.slice(`mcp__${server}__`.length))
+        }
+      }
       return buildGuidance({
         project: projectLabel(projectRoot, homedir()),
         servers,
         offered,
         deferred,
+        mostUsed,
         activationEnabled,
       })
     } catch (error) {

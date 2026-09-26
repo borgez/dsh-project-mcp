@@ -661,15 +661,18 @@ describe('deferral budget', () => {
     expect(surfaceChars([{ name: 'ab', description: 'cd', parameters: cyclic }])).toBe(4)
   })
 
-  it('leaves a surface that exactly fits the budget untouched', async () => {
+  it('leaves a surface that exactly fits the budget untouched, and still offers the discovery tool', async () => {
     const ctx = new FakeScopeCtx()
     wiring(ctx, () => SCHEMAS, { toolBudgetChars: surfaceChars(SCHEMAS) })
 
     ctx.emitSessionEvent(userMessage(RANKED_REVIEW))
     const result = await ctx.assembleWithInner()
-    // Nothing is deferred, so nothing is added and no discovery tool appears.
-    expect(result.assembly).toBe(result.inner)
-    expect(offersSearch(result.assembly)).toBe(false)
+    // Nothing is deferred, so every mounted tool stays listed — and the
+    // discovery tool is pinned: it appears in every disclosure assembly so the
+    // model can always discover tools as the project grows.
+    expect(result.assembly).not.toBe(result.inner)
+    expect(mcpNames(result.assembly)).toEqual(['mcp__alpha__code_review'])
+    expect(offersSearch(result.assembly)).toBe(true)
   })
 
   it('starts deferring one character over the budget', async () => {

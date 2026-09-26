@@ -32,6 +32,7 @@ import {
   SERVICE_NAME,
   apply,
   inject,
+  liveValue,
   name,
   resolveConfig,
 } from '../src/index.ts'
@@ -243,8 +244,10 @@ describe('project-mcp entry identity', () => {
   it('validates through the loader schema and applies its defaults', () => {
     const parsed = Config({})
     expect(parsed.enabled).toBe(true)
-    expect(parsed.lazy).toBe(true)
     expect(parsed.inputs).toEqual({})
+    // A volatile field parses to the host's ref shape: the default lives
+    // behind the ref's `get()`, and `resolveConfig` unwraps it the same way.
+    expect(liveValue(parsed.lazy)).toBe(true)
     // The defaults the schema hands the loader resolve to the same config.
     expect(resolveConfig(parsed)).toMatchObject({
       localFiles: ['.dsh/mcp.json'],
@@ -292,8 +295,19 @@ describe('apply', () => {
     ])
     expect(typeof host.registrations[0]?.handler).toBe('function')
 
-    // The counter listener rides the registry's own result event.
-    expect([...host.listeners.keys()]).toEqual(['tools/result'])
+    // The volatile-merge listener rides the loader's live-edit event, and the
+    // counter listener rides the registry's own result event.
+    expect([...host.listeners.keys()]).toEqual(['loader/volatile-update', 'tools/result'])
+  })
+
+  it('re-resolves the config when the loader announces a volatile update', async () => {
+    const host = fakeHost([])
+    await apply(host.ctx, {})
+    const handlers = host.listeners.get('loader/volatile-update')
+    expect(handlers).toHaveLength(1)
+    // An unchanged config merges back without throwing; the merge itself is
+    // covered in `tests/runtime.spec.ts` (`applyLiveConfig`).
+    expect(() => handlers?.[0]?.([])).not.toThrow()
   })
 
   it('drives the published service and unwinds every block', async () => {

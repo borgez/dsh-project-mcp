@@ -186,8 +186,9 @@ Plugin config is the `cordis.patch.yml` row (defaults shown):
 On DSH ≥ 0.1.7 the keys below are **volatile**: the host serves them as a
 config form, an edit commits into the running plugin without a restart, and the
 runtime picks the new value up on the loader's `loader/volatile-update` event.
-Every other key — `localFiles`, `globalFiles`, `inputs`, the marker lists,
-`failOnStartupError`, `watch`, `credentialsFile` — is structural and still
+Every other key — `enabled`, `localFiles`, `globalFiles`, `projectMarkers`,
+`fileMarkers`, `inputs`, `credentialsFile`, `watch`, `rescanIntervalMs`,
+`failOnStartupError` — is structural and still
 needs a remount (restart or config reload) to take effect. An older host just
 hands over plain values, and nothing about the boot path changes.
 

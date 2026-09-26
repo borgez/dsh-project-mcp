@@ -141,10 +141,17 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     expect(exports?.inject).toEqual([])
     expect(registered).toHaveLength(1)
     // Each surface waits only for what it needs: the tab for the sidebar, the
-    // settings page for the slot registry plus the locale, and the toast stack
-    // for the same pair — the locale seat is what lets a language switch
+    // settings page for the slot registry plus the locale, the configuration
+    // card (F-54) for the same pair plus `configForms` — in an inject of its
+    // own, so the settings tab never depends on it — and the toast stack for
+    // the same pair again: the locale seat is what lets a language switch
     // repaint the banners on screen.
-    expect(injected).toEqual([['betterSidebar'], ['slots', 'locale'], ['slots', 'locale']])
+    expect(injected).toEqual([
+      ['betterSidebar'],
+      ['slots', 'locale'],
+      ['slots', 'locale', 'configForms'],
+      ['slots', 'locale'],
+    ])
   })
 
   it('keeps the browser half bootable without the optional sidebar service', () => {

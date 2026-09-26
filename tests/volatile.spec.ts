@@ -1,5 +1,5 @@
 /**
- * Volatile config fields (F-53): the schema flags exactly the live-editable
+ * Volatile config fields (F-54): the schema flags exactly the live-editable
  * keys, `liveValue` unwraps both shapes a host can hand over, and
  * `resolveConfig` resolves volatile refs and plain values alike.
  */

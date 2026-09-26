@@ -1297,7 +1297,7 @@ describe('ProjectMcpRuntime', () => {
   })
 })
 
-describe('applyLiveConfig (F-53)', () => {
+describe('applyLiveConfig (F-54)', () => {
   it('moves the activation gate the next snapshot reads', async () => {
     const project = makeProject({ alpha: { command: 'npx' } })
     // A zero budget defers the whole surface while activation is on, so the

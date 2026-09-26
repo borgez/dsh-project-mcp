@@ -24,6 +24,8 @@
  * @module src/client/locales/ui
  */
 
+import { EN as configEn } from '../plugin-config.ts'
+import type { LocaleKey as PluginConfigLocaleKey } from '../plugin-config.ts'
 import { EN, NS } from '../settings.ts'
 import type { LocaleKey as SettingsLocaleKey } from '../settings.ts'
 import type { TabLocale } from '../tab-locale.ts'
@@ -31,7 +33,7 @@ import { en as viewEn } from '../view.ts'
 import type { LocaleKey as ViewLocaleKey, Translate } from '../view.ts'
 
 /** Every key the `settings.projectMcp` namespace carries. */
-export type UiKey = ViewLocaleKey | SettingsLocaleKey
+export type UiKey = ViewLocaleKey | SettingsLocaleKey | PluginConfigLocaleKey
 
 /**
  * The merged English table, built on first read rather than at module
@@ -43,7 +45,7 @@ export type UiKey = ViewLocaleKey | SettingsLocaleKey
  */
 let english: Record<UiKey, string> | undefined
 function mergedEnglish(): Record<UiKey, string> {
-  return (english ??= { ...EN, ...viewEn })
+  return (english ??= { ...EN, ...viewEn, ...configEn })
 }
 
 /** English, and the runtime fallback for any language that lacks a key. */
@@ -419,6 +421,55 @@ export const zh: Record<UiKey, string> = {
   requestPreviewHidden: '已隐藏 {count} 个',
   requestPreviewSaved: '已隐藏 {count} 个 · 节省 ≈ {tokens} token',
   requestPreviewNoOffer: '此会话尚未向模型提供任何工具',
+  // The plugin's own configuration card (F-54), the newest keys last.
+  configSummary: '编辑本插件的激活与运行时配置',
+  configGroupActivation: '激活',
+  configGroupRuntime: '运行时',
+  configLoading: '正在加载配置…',
+  configUnavailable: '宿主未向此客户端提供本插件的配置。',
+  configReadOnly: '此客户端的偏好为进程内有效，因此此处这些值为只读。',
+  configOverridden: '已覆盖',
+  configReset: '重置',
+  configResetHint: '清除此覆盖，恢复默认值',
+  configInvalidInteger: '请输入 ≥ {min} 的整数',
+  configInvalidRange: '请输入 {min} 到 {max} 之间的整数',
+  configInvalidPrefix: '最多 {max} 个字符：字母、数字、“_” 或 “-”',
+  configActivationEnabled: '工具激活',
+  configActivationEnabledHint: '渐进式提供 MCP 工具——计数、披露与搜索门控',
+  configActivationSeeded: '预置工具数',
+  configActivationSeededHint: '在计数累计之前，从第一步就提供的工具数；0 表示不预置',
+  configActivationMinCalls: '固定所需调用次数',
+  configActivationMinCallsHint: '计数器在调用达到此次数后直接固定该工具',
+  configToolIdleMs: '工具闲置超时（毫秒）',
+  configToolIdleMsHint: '工具超过此时长未使用将从请求中移除',
+  configGuidanceEnabled: '系统提示指引',
+  configGuidanceEnabledHint: '将本插件的使用说明注入会话提示',
+  configActivationAutoLimit: '自动激活上限',
+  configActivationAutoLimitHint: '计数器最多可自行加入的工具数（0–50）',
+  configActivationAutoStickySteps: '黏滞步数',
+  configActivationAutoStickyStepsHint: '刚使用过的工具无论计数如何都保持固定的步数（0–20）',
+  configActivationToolBudgetChars: '工具预算（字符）',
+  configActivationToolBudgetCharsHint: '单次请求携带的工具模式字符预算（≥ 1000）',
+  configAllowGlobalWrite: '允许全局写入',
+  configAllowGlobalWriteHint: '允许保存到用户级（~/.dsh）配置',
+  configEnvFiles: '.env 文件',
+  configEnvFilesHint: '为服务器环境变量加载 .env 文件',
+  configLazy: '惰性挂载',
+  configLazyHint: '在会话的第一步启动项目服务器，而非启动时',
+  configLocalPrefix: '本地前缀',
+  configLocalPrefixHint: '本地工具名前缀——最多 5 个字符，仅限 A–Z、0–9、_ 或 -；留空则禁用',
+  configProfileWins: '配置档优先',
+  configProfileWinsHint: '同名服务器以配置档级覆盖项目声明',
+  configConnectTimeoutMs: '连接超时（毫秒）',
+  configConnectTimeoutMsHint: '启动单个服务器允许的最长时长',
+  configToolCallTimeoutMs: '调用超时（毫秒）',
+  configToolCallTimeoutMsHint: '单次工具调用允许的最长时长',
+  configIdleTimeoutMs: '服务器闲置超时（毫秒）',
+  configIdleTimeoutMsHint: '服务器闲置超过此时长将被停止',
+  configDebounceMs: '监听去抖（毫秒）',
+  configDebounceMsHint: '配置变更触发重新扫描前的静默时长',
+  configActivationWaitMs: '激活等待（毫秒）',
+  configActivationWaitMsHint: '第一步等待惰性服务器就绪的最长时长',
 }
 
 /**
@@ -773,6 +824,55 @@ export const ru: Record<UiKey, string> = {
   requestPreviewHidden: 'скрыто {count}',
   requestPreviewSaved: 'скрыто {count} · сэкономлено ≈ {tokens} токенов',
   requestPreviewNoOffer: 'эта сессия пока ничего не предложила',
+  // The plugin's own configuration card (F-54), the newest keys last.
+  configSummary: 'Настройка активации и параметров времени выполнения плагина',
+  configGroupActivation: 'Активация',
+  configGroupRuntime: 'Время выполнения',
+  configLoading: 'Загрузка конфигурации…',
+  configUnavailable: 'Хост не предоставляет конфигурацию этого плагина данному клиенту.',
+  configReadOnly: 'Этот клиент хранит настройки в пределах процесса, поэтому здесь эти значения доступны только для чтения.',
+  configOverridden: 'переопределено',
+  configReset: 'Сбросить',
+  configResetHint: 'Убрать переопределение и вернуть значение по умолчанию',
+  configInvalidInteger: 'Введите целое число ≥ {min}',
+  configInvalidRange: 'Введите целое число от {min} до {max}',
+  configInvalidPrefix: 'Не более {max} символов: буквы, цифры, «_» или «-»',
+  configActivationEnabled: 'Активация инструментов',
+  configActivationEnabledHint: 'Постепенно предлагать MCP-инструменты — счётчики, раскрытие и поисковый шлюз',
+  configActivationSeeded: 'Предустановленные инструменты',
+  configActivationSeededHint: 'Инструменты, предлагаемые с первого шага, до накопления счётчиков; 0 — не предлагать',
+  configActivationMinCalls: 'Вызовов до закрепления',
+  configActivationMinCallsHint: 'После стольких вызовов счётчики закрепляют инструмент напрямую',
+  configToolIdleMs: 'Тайм-аут простоя инструмента (мс)',
+  configToolIdleMsHint: 'Инструмент, не использованный за это время, исключается из запроса',
+  configGuidanceEnabled: 'Подсказки в системном промпте',
+  configGuidanceEnabledHint: 'Добавлять рабочие заметки плагина в промпт сессии',
+  configActivationAutoLimit: 'Лимит автоактивации',
+  configActivationAutoLimitHint: 'Максимум инструментов, которые счётчики могут добавить сами (0–50)',
+  configActivationAutoStickySteps: 'Шагов закрепления',
+  configActivationAutoStickyStepsHint: 'Сколько шагов только что использованный инструмент остаётся закреплённым независимо от счётчиков (0–20)',
+  configActivationToolBudgetChars: 'Бюджет инструментов (символы)',
+  configActivationToolBudgetCharsHint: 'Бюджет в символах на схемы инструментов в одном запросе (≥ 1000)',
+  configAllowGlobalWrite: 'Глобальная запись',
+  configAllowGlobalWriteHint: 'Разрешить сохранение в пользовательскую (~/.dsh) конфигурацию',
+  configEnvFiles: 'Файлы .env',
+  configEnvFilesHint: 'Загружать .env-файлы для переменных окружения серверов',
+  configLazy: 'Ленивое монтирование',
+  configLazyHint: 'Запускать серверы проекта на первом шаге сессии, а не при загрузке',
+  configLocalPrefix: 'Локальный префикс',
+  configLocalPrefixHint: 'Префикс имён локальных инструментов — до 5 символов: A–Z, 0–9, _ или -; пусто — отключён',
+  configProfileWins: 'Профиль приоритетнее',
+  configProfileWinsHint: 'Серверы уровня профиля переопределяют одноимённые объявления проекта',
+  configConnectTimeoutMs: 'Тайм-аут подключения (мс)',
+  configConnectTimeoutMsHint: 'Сколько может длиться запуск одного сервера',
+  configToolCallTimeoutMs: 'Тайм-аут вызова (мс)',
+  configToolCallTimeoutMsHint: 'Сколько может длиться один вызов инструмента',
+  configIdleTimeoutMs: 'Тайм-аут простоя сервера (мс)',
+  configIdleTimeoutMsHint: 'Сервер, простаивающий дольше этого срока, останавливается',
+  configDebounceMs: 'Антидребезг наблюдения (мс)',
+  configDebounceMsHint: 'Пауза перед тем, как изменение конфигурации запустит повторное сканирование',
+  configActivationWaitMs: 'Ожидание активации (мс)',
+  configActivationWaitMsHint: 'Сколько первый шаг может ждать ленивые серверы',
 }
 
 /** English text for a key, with `{name}` placeholders substituted. */

@@ -13,7 +13,7 @@ so it cannot be the expected side of a machine comparison. The machine acceptanc
 contract written below, reading the `getComputedStyle` of drawn elements in the live shell's
 theme. Sections 8 and 9 are the map of value sources and the list of what exactly the checks hold.
 
-## 0. The four surfaces and their code
+## 0. The five surfaces and their code
 
 | Surface | Where it lives | Code | Host seat |
 |---|---|---|---|
@@ -21,6 +21,14 @@ theme. Sections 8 and 9 are the map of value sources and the list of what exactl
 | A′. The tab's settings drawer | the tab's popover | `src/client/view.ts` (`ProjectMcpSettings`, `view.ts:2441`) | `settings.render` of the tab descriptor (`src/client/index.ts:95-101`) |
 | B. The page in the native settings | a separate settings navigation item | `src/client/settings.ts` (`SettingsPage`, `settings.ts:1996`), `src/client/settings-tools.ts` (`ToolsPage`) | the `settings.section` slot, id `project-mcp`, order 900 (`settings.ts:289-299, 380-395`) |
 | T. Toasts | the frame layer | `src/client/toasts.ts` (`ToastStack`) | the `shell.overlay` slot, id `dsh-project-mcp:toasts`, order 60 (`toasts.ts:41-47`) |
+| C. The Plugins-page config card | the Plugins manager page, the bundle's detail | `src/client/plugin-config.ts` (`PluginConfigCard`, `plugin-config.ts:374`) | the `plugins.bundle.config` slot, key = package name (`registerPluginConfigCard`, `plugin-config.ts:697`), registered only while `configForms.whileServed` serves a namespace (`src/client/index.ts:178-185`) |
+
+Surface C is **host-embedded**: the Plugins page is the harness's own and draws the section
+chrome (the card's title, the plugin icon, the save semantics), so the card draws only its rows
+— the same inline-`style`/token approach as every other surface, no chrome of its own. The
+stand and the gate are deliberately untouched: `mockups/harness.html` has no canvas for a page
+the harness owns, and `pnpm design:parity` checks only this plugin's own surfaces in the live
+shell, so neither file gained a rule for C.
 
 The client has no style classes: **the whole look is inline `style` objects** (`STYLE` in every
 module), zero `ds-*`-style classes. So "comparing the look" for the mocks rests not on CSS classes

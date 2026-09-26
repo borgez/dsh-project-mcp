@@ -22,6 +22,8 @@ import { PACKAGE_NAME, TAB_ID } from '../shared.ts'
 import { designModeEnabled, registerDesignSurfaces } from './design.ts'
 import { en, ru, zh } from './locales/ui.ts'
 import { NS_HOST, en as hostEn, ru as hostRu, zh as hostZh, hostTranslate } from './locales/host.ts'
+import { registerPluginConfigCard } from './plugin-config.ts'
+import type { PluginConfigSlotServices } from './plugin-config.ts'
 import { NS, registerSettingsTab } from './settings.ts'
 import type { SettingsSlotServices } from './settings.ts'
 import { localeServiceOf, tabTranslate, useTabTranslate } from './tab-locale.ts'
@@ -165,6 +167,21 @@ export function apply(ctx: Context): void {
       'dsh-project-mcp: host dictionaries',
     )
     registerSettingsTab(services)
+  })
+
+  // The plugin's own configuration card on the Plugins page (F-54), in an
+  // inject of its own: `configForms` is optional (DSH before the service's
+  // introduction, or a composition without it), and the settings tab above must
+  // not depend on it. `locale` rides along because the card declares the
+  // plugin's namespace — the dictionaries themselves stay registered by the
+  // settings block, whose inject list is a subset of this one's.
+  ctx.inject(['slots', 'locale', 'configForms'], (scope) => {
+    const services = scope as unknown as PluginConfigSlotServices
+    const forms = services.configForms
+    // A service that predates `get`/`whileServed` leaves the card absent
+    // rather than failing the entry — the same rule the whole file follows.
+    if (typeof forms?.get !== 'function' || typeof forms.whileServed !== 'function') return
+    registerPluginConfigCard(services)
   })
 
   // The frame-wide toast stack, in its own inject: a composition without the

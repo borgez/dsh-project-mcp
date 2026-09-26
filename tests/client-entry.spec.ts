@@ -283,10 +283,13 @@ describe('apply against a settled composition', () => {
 
     // Each surface sits behind the services it needs, and behind no other: the
     // toast stack asks for the slot registry and the locale seat, so a language
-    // switch repaints the banners on screen.
+    // switch repaints the banners on screen. The plugin's configuration card
+    // (F-54) adds the third list — `configForms` — in an inject of its own, so
+    // the settings tab never depends on it.
     expect(composition.recorded.injects).toEqual([
       ['betterSidebar'],
       ['slots', 'locale'],
+      ['slots', 'locale', 'configForms'],
       ['slots', 'locale'],
     ])
     expect(composition.recorded.tabs).toHaveLength(1)

@@ -1,5 +1,33 @@
 # Project Instructions
 
+## Tooling — the mounted `tglider` MCP server
+
+This checkout declares one MCP server for the session, in `.dsh/mcp.json`: **`tglider`** (stdio,
+`npx -y tglider --workspace . --default-timeout 30m`). It is the project's type-aware view of the
+TypeScript sources — symbol search and declarations, references, callers and callees, diagnostics,
+project and dependency graph, rename previews. Here the name is the real mount, not the generic
+example name of the commits rule below.
+
+Use it before the shell on code questions — `mcp_search_tools` when the session defers the
+server's tools, then `find_code` / `query_symbols` for a declaration. Three traps, each of which
+costs a round trip when it is not known in advance:
+
+- **Symbol tools take an opaque key**, the `canonicalSymbolKey` that `find_code` / `query_symbols`
+  return — never `path:Name`, never a bare name. A bad key fails loudly in `find_callers`
+  (`Symbol not found.`) but *silently* in `find_references`, which answers `count: 0,
+  partial: true`: read `partial` before concluding that a symbol is unreferenced. The same key
+  drives `compute_rename_edits` (preview) and `rename_symbol` (which applies).
+- **`find_callers` can report zero callers** while noting call sites it could not group (they sit
+  outside an indexed callable body) — cross-check with `find_references`, which counted 9 for the
+  same symbol.
+- **`get_diagnostics` is not a gate.** Checked 2026-09-27 against tglider 1.8.0: it reported 96
+  errors on a tree that `pnpm typecheck` compiles clean — one family, JSDoc `{@link Type.member}`
+  links (and the declaration owning such a block) read as TS2693/2702/2713 "type used as a
+  value/namespace". Confirm a diagnostic with `pnpm typecheck` before acting on it.
+
+Shell `grep`/`find` stay fine for prose, docs and non-TS files, and the gate keeps the last word:
+`pnpm check` and `pnpm e2e` decide — the server reads the working tree, it does not replace them.
+
 ## Commits — never publish local identifiers
 
 Commits are permanent and easy to push by accident, so local machine facts must never reach a tracked file: absolute home paths (`/Users/<name>/…`, `/home/<name>/…`, `C:\Users\<name>\…`), host names, names of private projects, and anything credential-shaped.

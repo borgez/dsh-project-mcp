@@ -93,6 +93,12 @@ Shows **this session's own rows** (`sessionRowsOf`), not the project's merged vi
   (`STYLE.name`, mono), the status word (`STYLE.muted` + the status colour), the transport chip
   (`STYLE.tag`, `http`/`stdio`);
 * the row's `title` = `detail`, else `STATUS_HINT[status]`;
+* **F-55 — the failure's own `Retry`.** A row in `error` carries the project's retry at its right
+  edge (`STYLE.button`, `title: retryHint`, `disabled` while a host action is in flight), so the
+  broken server is pressed where it shows rather than behind the errors disclosure (`Retry`, §1.4)
+  or on the Servers page's table. It is the same action those surfaces send — one built button
+  (`retryButton`), not three copies of the markup. No other status carries it, and a surface that
+  hands no `onRetry` down draws none: a read-only panel offers no dead press;
 * **F-32 — idleness.** On quiet rows (`idle`/`disabled`), when the host published
   `usage[server].lastUsedAt`, a quiet `idle {n}d` / `{n}h` / `{n}m` follows the status word
   (`STYLE.dim`): whole days, hours, otherwise minutes. `active`, `error` and `conflict` do not

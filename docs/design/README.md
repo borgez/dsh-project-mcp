@@ -118,6 +118,11 @@ field, the tier chips, the caption and `Clear` exist both in `mockups/harness.ht
 state) and in `src/client/view.ts`, and the rules are written in `contracts/surfaces.md` §1.5. No
 work queue appeared from this item.
 
+The failure's own `Retry` (F-55) came the same way: the tab's servers block in
+`mockups/harness.html` and `ServersBlock` in `src/client/view.ts` both draw the project's retry on
+an `error` row, with the rules in `contracts/surfaces.md` §1.3. No work queue appeared from this
+item either.
+
 Until the product catches up with the project, the `design:parity` gate checks the product against
 the contract (`contracts/surfaces.md`), not against the picture.
 

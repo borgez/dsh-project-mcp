@@ -862,6 +862,35 @@ describe('ServersBlock', () => {
     expect((failing?.props.style as { background?: string }).background).toContain('bg-layer-3')
   })
 
+  it('offers the project’s Retry on a failing row, and on that row only', () => {
+    const retried: string[] = []
+    const tree = resolve(ServersBlock({ rows, t, onRetry: () => retried.push('retry'), busy: false }))
+    const retry = button(tree, t('retry'))
+
+    // One action, on the one failing row: the active, connecting and disabled
+    // rows are readings, not jobs, and a `Retry` beside them would promise a
+    // restart for a server that is already doing what it should.
+    expect(elements(tree).filter((element) => element.type === 'button')).toHaveLength(1)
+    expect(retry?.props.title).toBe(t('retryHint'))
+    expect(retry?.props.disabled).toBe(false)
+    ;(retry?.props.onClick as () => void)()
+    expect(retried).toEqual(['retry'])
+  })
+
+  it('keeps the row button still while a host action is in flight', () => {
+    const tree = resolve(ServersBlock({ rows, t, onRetry: () => undefined, busy: true }))
+
+    expect(button(tree, t('retry'))?.props.disabled).toBe(true)
+  })
+
+  it('offers no Retry where nothing can be written', () => {
+    // A read-only surface hands no action down, and the row draws none: the
+    // button is the callback's own shadow, exactly as it is in `serverRow`.
+    const tree = resolve(ServersBlock({ rows, t }))
+
+    expect(button(tree, t('retry'))).toBeUndefined()
+  })
+
   it('renders nothing for a session that declares no server', () => {
     expect(ServersBlock({ rows: [], t })).toBeNull()
   })

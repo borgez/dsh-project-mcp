@@ -1541,7 +1541,15 @@ export function tabBody(props: TabBodyProps): ReactNode {
   return [
     rows.length === 0
       ? emptyState(t('noServersDeclared'), declaredHint(project, t), 'servers')
-      : h(ServersBlock, { key: 'servers', rows, usage: project.usage, t, hostT: props.hostT }),
+      : h(ServersBlock, {
+          key: 'servers',
+          rows,
+          usage: project.usage,
+          t,
+          hostT: props.hostT,
+          onRetry: props.onRetry,
+          busy: props.busy,
+        }),
     // The F-24 disagreement view. The merged project rows are no longer drawn
     // here — the block above is this session's own reading — but `Release` for a
     // single session still lives only in this section.
@@ -2405,6 +2413,13 @@ export function ServersBlock(props: {
   t: Translate
   /** Host-namespace seat for the rows' coded details (F-48). */
   hostT?: Translate | undefined
+  /**
+   * The project's retry, handed down to the failing rows so a broken server can
+   * be pressed where it shows instead of behind the errors disclosure (F-55).
+   */
+  onRetry?: (() => void) | undefined
+  /** `true` while a host action is in flight; the row button goes still with it. */
+  busy?: boolean | undefined
 }): ReactNode {
   const { rows, t } = props
   if (rows.length === 0) return null
@@ -2431,6 +2446,9 @@ export function ServersBlock(props: {
       // The host's own record of this server; a row the counters never saw has
       // no `lastUsedAt` to read and the quiet word is simply not drawn.
       const idle = idleNote(row.status, props.usage?.[row.name]?.lastUsedAt, t)
+      // The one job a row here can carry: a failing server gets the project's
+      // retry, at the row's right edge, and nothing else does.
+      const retry = row.status === 'error' ? props.onRetry : undefined
       return h(
         'div',
         {
@@ -2450,6 +2468,8 @@ export function ServersBlock(props: {
         row.transport === undefined
           ? null
           : h('span', { style: STYLE.tag }, shortTransport(row.transport)),
+        retry === undefined ? null : h('span', { style: { flex: 1 } }),
+        retryButton(t, retry, props.busy),
       )
     }),
   )
@@ -3972,6 +3992,41 @@ export function callsLabel(calls: ToolCalls | undefined, t: Translate = translat
 }
 
 /**
+ * The one `Retry` a failing server row carries.
+ *
+ * Two surfaces draw a server row — the errors disclosure's {@link serverRow} and
+ * the tab's own {@link ServersBlock} — and both offer the same action: the host
+ * route drops this project's failed mounts and re-mounts them. The button is
+ * built here once, so its label, its hint and the `disabled` flag that keeps
+ * every press still while one host action is in flight cannot drift apart
+ * between them. A surface that hands no action down gets no button at all,
+ * which is what makes a read-only panel read-only instead of drawing a dead
+ * press.
+ * @param t - translate seat.
+ * @param onRetry - the project's retry, or undefined where nothing can be written.
+ * @param busy - `true` while a host action is in flight.
+ * @returns the button, or `null` where there is no action to press.
+ */
+function retryButton(
+  t: Translate,
+  onRetry: (() => void) | undefined,
+  busy: boolean | undefined,
+): ReactNode {
+  return onRetry === undefined
+    ? null
+    : h(
+        'button',
+        {
+          style: STYLE.button,
+          title: t('retryHint'),
+          disabled: busy === true,
+          onClick: onRetry,
+        },
+        t('retry'),
+      )
+}
+
+/**
  * One server, as the tab draws it.
  *
  * The status is the dot, not a word: its colour comes from the shared
@@ -4021,18 +4076,7 @@ export function serverRow(
       quiet ? h('span', { style: { ...STYLE.tag, ...STYLE.tagQuiet } }, t(STATUS_KEYS[row.status])) : null,
       idle === undefined ? null : h('span', { style: STYLE.dim }, idle),
       h('span', { style: { flex: 1 } }),
-      row.status === 'error' && options.onRetry !== undefined
-        ? h(
-            'button',
-            {
-              style: STYLE.button,
-              title: t('retryHint'),
-              disabled: options.busy === true,
-              onClick: options.onRetry,
-            },
-            t('retry'),
-          )
-        : null,
+      retryButton(t, row.status === 'error' ? options.onRetry : undefined, options.busy),
     ),
     // A quiet row's detail ("not mounted yet — this session has not started a
     // turn") is a fact about a *normal* state, and the mockup draws `idle` as a

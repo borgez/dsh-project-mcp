@@ -1017,6 +1017,27 @@ describe('the sidebar panel', () => {
     expect(calls[2]?.init).toMatchObject({ body: JSON.stringify({ projectRoot: '/repo' }) })
   })
 
+  it('retries a failed server from its own row, without opening the errors block', async () => {
+    const calls = fetchCalls(() => ok(panelSnapshot()))
+    const view = mountPanel()
+    await settle()
+    const closed = view.rerender()
+
+    // The block is shut, so the button on the row is the servers block's own and
+    // not the disclosure's: the failure can be pressed where the eye already is,
+    // instead of behind a disclosure the reader has to open first.
+    expect(flat(closed)).not.toContain(t('retryFailed'))
+    expect(texts(closed)).toContain('gateway')
+    click(closed, t('retry'))
+    await settle()
+
+    expect(calls[1]?.url).toBe(`${ROUTE_PREFIX}/${ROUTE_ACTIONS.retry}`)
+    expect(calls[1]?.init).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ projectRoot: '/repo' }),
+    })
+  })
+
   it('reads out every triaged status inside the errors block, and none before it', async () => {
     const rows = [
       row('alpha', 'active'),

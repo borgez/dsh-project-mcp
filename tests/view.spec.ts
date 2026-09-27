@@ -940,6 +940,25 @@ describe('tabBody', () => {
     expect((readOnly.props.body as (Element | null)[])[1]).toBeNull()
   })
 
+  it('hands the servers block the project’s Retry, so a failure can be pressed where it shows', () => {
+    const retried: string[] = []
+    const servers = blocksOf({
+      ...base,
+      onRetry: () => retried.push('retry'),
+      busy: true,
+    })[0] as Element
+
+    expect(servers.type).toBe(ServersBlock)
+    ;(servers.props.onRetry as () => void)()
+    expect(retried).toEqual(['retry'])
+    // The block's own rows go still with the same flag the disclosure's button
+    // reads, so one host action disables every press on the surface.
+    expect(servers.props.busy).toBe(true)
+
+    // Nothing to write: no action is handed down, and the row draws none.
+    expect((blocksOf(base)[0] as Element).props.onRetry).toBeUndefined()
+  })
+
   it('draws the logs block always, with this session’s own event count', () => {
     const logs = blocksOf({ ...base, sessionLogCount: 6 })[4] as Element
 

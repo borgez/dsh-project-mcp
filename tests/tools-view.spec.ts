@@ -37,9 +37,14 @@ import {
   sessionRowsOf,
   tierVisible,
   toggledTier,
+  toolCallsLine,
   toolCounts,
-  toolDetailFacts,
+  toolFactsBody,
   toolFilterActive,
+  toolFactsView,
+  toolReasonLine,
+  toolServerState,
+  toolTierSentence,
   toolTime,
   translateOf,
 } from '../src/client/view.ts'
@@ -770,23 +775,62 @@ describe('a tool row’s detail', () => {
   })
 })
 
-describe('toolDetailFacts', () => {
-  it('reads the server out of the registry name and the tier out of the offer', () => {
-    expect(
-      toolDetailFacts(
-        'mcp__tglider__workspace',
-        { via: 'pin', open: false, onToggle: () => undefined },
-        t,
-      ),
-    ).toEqual([t('toolServer', { server: 'tglider' }), t('toolTierPinned')])
+describe('the body’s own facts', () => {
+  it('reads the server and its state out of the session’s declared rows', () => {
+    // The state is the row's own status word, translated through the block's
+    // `STATUS_KEYS`: an invented `idle` for a server nobody declared is exactly
+    // what this line exists to prevent.
+    expect(toolServerState('mcp__tglider__workspace', [row('tglider', 'active')], t)).toBe(
+      t('toolServerState', { server: 'tglider', state: t('statusActive') }),
+    )
+    expect(toolServerState('mcp__tglider__workspace', [row('tglider', 'error')], t)).toBe(
+      t('toolServerState', { server: 'tglider', state: t('statusError') }),
+    )
   })
 
-  it('leaves out the server, the step and the time it was not given', () => {
-    // A name without the `mcp__` prefix names no server, and the context tier
-    // carries no clock: a fact the host did not publish is not drawn at all.
+  it('draws no state for a name with no server, and none for a server nobody declared', () => {
+    expect(toolServerState('odd_name', [row('tglider', 'active')], t)).toBeUndefined()
+    expect(toolServerState('mcp__tglider__workspace', [], t)).toBeUndefined()
+    expect(toolServerState('mcp__tglider__workspace', undefined, t)).toBeUndefined()
+  })
+
+  it('prints the two counter readings apart, and only the ones the host measured', () => {
+    const both = { recorded: true, split: true, project: 182, session: 3 }
+
+    expect(toolCallsLine(both, t)).toBe(
+      [t('callsProject', { count: 182 }), t('toolCallsSession', { count: 3 })].join(' · '),
+    )
+    // A host that does not split by session has one figure, not two.
+    expect(toolCallsLine({ recorded: true, split: false, project: 182, session: undefined }, t)).toBe(
+      t('callsProject', { count: 182 }),
+    )
+    // No record at all is not a row of zeroes: it is no line.
+    expect(toolCallsLine(undefined, t)).toBeUndefined()
     expect(
-      toolDetailFacts('odd_name', { via: 'context', open: false, onToggle: () => undefined }, t),
-    ).toEqual([t('toolTierContext')])
+      toolCallsLine({ recorded: false, split: false, project: undefined, session: undefined }, t),
+    ).toBeUndefined()
+  })
+
+  it('prints the reason with the host’s own figures, and invents none of them', () => {
+    expect(toolReasonLine({ kind: 'budget', chars: 1_240, budget: 8_000, used: 6_900 }, t)).toBe(
+      t('toolReasonBudget', { chars: 1_240, budget: 8_000, used: 6_900 }),
+    )
+    // A figure the host did not measure leaves its phrase out — no zero, no
+    // estimate: the panel never computes a size of its own (contract C2's rule).
+    const partial = toolReasonLine({ kind: 'budget', chars: 640 }, t)
+    expect(partial).toContain(t('toolReasonChars', { chars: 640 }))
+    expect(partial).not.toContain('budget')
+    expect(partial).not.toContain('already offered')
+    // A reason with no measurement at all is still a reason: the word alone.
+    expect(toolReasonLine({ kind: 'budget' }, t)).toBe(t('toolReason'))
+    // An offered name carries no reason, so the body prints no line.
+    expect(toolReasonLine(undefined, t)).toBeUndefined()
+  })
+
+  it('says the tier as a sentence instead of the wire word', () => {
+    expect(toolTierSentence('pin', t)).toBe(t('toolTierPinned'))
+    expect(toolTierSentence('session', t)).toBe(t('toolTierSession'))
+    expect(toolTierSentence('context', t)).toBe(t('toolTierContext'))
   })
 })
 

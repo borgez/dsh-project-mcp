@@ -373,7 +373,7 @@ export interface SettingsTabProps {
  * The two client services the settings contribution needs. Both are optional in
  * a composition, which is exactly why registration goes through `ctx.inject`
  * rather than a module-level `inject` list: dropping either one must not take
- * the `dsh-better-sidebar` tab down with it.
+ * the sidebar tab down with it.
  */
 export interface SlotLocale {
   register(namespace: string, dictionaries: Record<string, Record<string, string>>): () => void
@@ -406,7 +406,7 @@ export interface SlotSlots<Slot extends string = string> {
  * The two client services a contribution needs. Both are optional in a
  * composition, which is exactly why registration goes through `ctx.inject`
  * rather than a module-level `inject` list: dropping either one must not take
- * the `dsh-better-sidebar` tab down with it.
+ * the sidebar tab down with it.
  */
 export interface SettingsSlotServices {
   effect(execute: () => unknown, label?: string): unknown

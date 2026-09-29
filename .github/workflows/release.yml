@@ -1,0 +1,177 @@
+# Automatic version bump and release.
+#
+# Every push to `main` that carries releasable commits — Conventional Commits:
+# `feat` → minor, `fix`/`perf`/`revert` → patch, `!` or `BREAKING CHANGE` →
+# major; `docs`, `chore`, `ci`, `test`, `refactor` release nothing on their own —
+# is turned into one release commit:
+#
+#   1. the full gate runs on the tree that is about to be tagged (`pnpm check`);
+#   2. `scripts/next-version.mjs` bumps the newest of `package.json`'s version and
+#      the highest `v*` tag, and refuses to guess when either is unreadable;
+#   3. the version is written to `package.json`, committed as
+#      `release: dsh-project-mcp <version>`, tagged `v<version>`, and the GitHub
+#      Release is created from the tag;
+#   4. `npm-publish.yml` publishes that tag to npm (called explicitly: a Release
+#      created with this workflow's own `GITHUB_TOKEN` starts no other run).
+#
+# The release commit is therefore the only thing that ever changes the version,
+# and a tag can only exist over a manifest that already agrees with it.
+#
+# Defence in depth against a release releasing itself: a push made with
+# `GITHUB_TOKEN` starts no workflow run at all, and the job below also refuses a
+# `release:` head commit — the second guard is what a PAT, a re-run, or a
+# manually replayed push would need. The job also refuses to reuse a tag or a
+# published version, so a drifted checkout fails loudly instead of shipping the
+# wrong number a second time.
+#
+# The `workflow_dispatch` path exists to re-drive a release that died between
+# the tag and npm: `bump: auto` finds nothing to do once the release commit is
+# the head commit, so pass an explicit level, or replay the failed publish job.
+
+name: Release
+
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Bump level; `auto` classifies the commits since the last tag
+        required: true
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
+      dry_run:
+        description: Decide and stop before committing anything
+        required: true
+        default: false
+        type: boolean
+
+# One release at a time, and never cancelled in flight: an interrupted run
+# between its tag push and its Release creation is repaired by re-running it,
+# not by starting a second one beside it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    # A release commit must not release again. `head_commit` exists only on a
+    # push, and the `|| ''` keeps the manual path from dereferencing a missing
+    # property; `inputs.*` is legitimate in this file because `workflow_dispatch`
+    # is declared above, and on the push path that context is simply empty —
+    # which is what makes `|| 'auto'` and `!= true` below do the right thing.
+    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message || '', 'release:') }}
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.decide.outputs.released }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The decision reads the commit range since the last tag; a shallow
+          # clone has neither the tags nor the range.
+          fetch-depth: 0
+
+      # A manual run picks its branch in the UI. A release cut from a feature
+      # branch would tag that branch and publish it to npm, so the branch is
+      # checked before anything expensive starts.
+      - name: Releases are cut from main, nothing else
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_name }}" != 'main' ]]; then
+            echo "::error::this run targets ${{ github.ref_name }}; a release is cut from main only"
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The gate runs here rather than after the tag: a tree that does not pass
+      # is never tagged, so no release exists whose commit failed its own suite.
+      - name: Gate — typecheck, build, coverage, resource audit
+        run: pnpm check
+
+      - name: Decide the next version
+        id: decide
+        run: node scripts/next-version.mjs --bump "${{ inputs.bump || 'auto' }}" --github-output "$GITHUB_OUTPUT"
+
+      - name: Summarise the decision
+        run: |
+          set -euo pipefail
+          {
+            echo "### Release decision"
+            echo
+            if [[ "${{ steps.decide.outputs.released }}" == 'true' ]]; then
+              echo "- next version: **${{ steps.decide.outputs.version }}** (${{ steps.decide.outputs.kind }})"
+            else
+              echo "- nothing to release: no commit since the last tag carries a bump"
+            fi
+            if [[ "${{ inputs.dry_run }}" == 'true' ]]; then
+              echo "- dry run: stopping before the commit"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guard — the version is neither tagged nor published
+        if: ${{ steps.decide.outputs.released == 'true' }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.decide.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "::error::tag v$version already exists — the history and package.json have drifted; reconcile them before releasing"
+            exit 1
+          fi
+          if npm view "dsh-project-mcp@$version" version > /dev/null 2>&1; then
+            echo "::error::dsh-project-mcp@$version is already published — npm cannot take a second copy; reconcile before releasing"
+            exit 1
+          fi
+          echo "v$version is free"
+
+      - name: Bump, commit and tag
+        if: ${{ steps.decide.outputs.released == 'true' && inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.decide.outputs.version }}"
+          # One writer for the manifest, tested in tests/next-version.spec.ts:
+          # the release commit is a version line and nothing else.
+          node scripts/next-version.mjs --apply "$version"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json
+          git commit -m "release: dsh-project-mcp $version"
+          git tag "v$version"
+          # `--atomic`: the branch and the tag move together or not at all. Without
+          # it a rejected branch push could still land the tag, leaving a release
+          # tag pointing at a commit that never reached `main`.
+          git push --atomic origin "HEAD:${{ github.ref_name }}" "v$version"
+          echo "tagged v$version on $(git rev-parse --short HEAD)"
+
+      - name: Create the GitHub Release
+        if: ${{ steps.decide.outputs.released == 'true' && inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.decide.outputs.version }}"
+          gh release create "v$version" \
+            --title "dsh-project-mcp $version" \
+            --generate-notes
+
+  publish:
+    needs: version
+    if: ${{ needs.version.outputs.released == 'true' && inputs.dry_run != true }}
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      ref: v${{ needs.version.outputs.version }}
+    secrets: inherit

@@ -1639,7 +1639,7 @@ describe('presentation owner', () => {
       [{ options: { name: 'dsh-progressive-tools' }, fiber: { state: 1 } }],
       [{ options: { name: 'dsh-progressive-tools', disabled: true }, fiber: { state: 2 } }],
       // A different plugin: owning another surface is not owning this one.
-      [{ options: { name: 'dsh-better-sidebar' }, fiber: { state: 2 } }],
+      [{ options: { name: 'example-sidebar' }, fiber: { state: 2 } }],
     ] satisfies LoaderEntryStub[][]) {
       const { runtime } = harness([], {}, extraEntries)
       const { agent } = fakeAgent('session-1', project.session)

@@ -265,6 +265,71 @@ export interface OfferedTool {
 }
 
 /**
+ * One accepted field of a tool's `parameters` schema, as the panel lists it.
+ *
+ * A field is listed from the definition the host already holds, so its type and
+ * its `required` flag are the schema's own and neither is inferred from the
+ * tool's name. Nesting stops at the top level: an object or array field is drawn
+ * as its type, not expanded, because the panel lists what a call takes rather
+ * than mirroring a schema. Schema `default` values are deliberately not part of
+ * this shape — a default can carry a value the tool did not mean to publish.
+ */
+export interface ToolField {
+  /** Property name, as the schema declares it. */
+  readonly name: string
+  /** JSON Schema `type` of the field, or `any` when the schema names none. */
+  readonly type: string
+  /** `true` when the schema's own `required` array names this property. */
+  readonly required: boolean
+  /** The property's own `description`, when the schema publishes one. */
+  readonly description?: string
+}
+
+/**
+ * Why one name is not in this session's request, in the host's own terms.
+ *
+ * The decision belongs to the host and the panel does not recompute it, so the
+ * reason travels as data and its copy lives in the client's dictionaries. Every
+ * figure here is a host measurement — the definition's own serialized size, the
+ * session's budget, what the offered set already carries — so a reason line
+ * invents no number. That is the same discipline as contract C2's step tag.
+ */
+export interface ToolReason {
+  /**
+   * Which decision left the name out. `budget` is the disclosure mode pushing it
+   * past {@link ToolReason.budget}: the whole mounted surface is registered, and
+   * this definition did not fit the request.
+   */
+  readonly kind: 'budget'
+  /** Serialized size of this definition, in characters — the host's own figure. */
+  readonly chars?: number
+  /** The session's tool budget in characters, when the host budgeted one. */
+  readonly budget?: number
+  /** Characters the offered set already carries, when the host measured them. */
+  readonly used?: number
+}
+
+/**
+ * One tool's detail, answered on demand for a row the reader opened.
+ *
+ * The panel fetches this instead of carrying it in the snapshot: the snapshot
+ * travels on every change frame and every poll, while a description and a schema
+ * are read once per opened row. The text is model-facing and arrives as data —
+ * it is never copied into a dictionary, is not translated, and is drawn as the
+ * host published it.
+ */
+export interface ToolFacts {
+  /** Public registry name this record answers about. */
+  readonly name: string
+  /** The definition's model-facing description, when the host holds one. */
+  readonly description?: string
+  /** Accepted fields, in schema order; empty when the tool declares none. */
+  readonly fields: readonly ToolField[]
+  /** Why the name is not offered, when it is not. Absent for an offered name. */
+  readonly reason?: ToolReason
+}
+
+/**
  * Another loaded plugin that owns the assembled tool list.
  *
  * The plugin and such an owner cannot shape one request together: the outer

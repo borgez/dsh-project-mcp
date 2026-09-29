@@ -1,41 +1,121 @@
-# This workflow will run tests using node and then publish a package to GitHub Packages when a release is created
-# For more information see: https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages
+# Publishing the npm package. One implementation, two callers:
+#
+#   - the `release:` event (a GitHub Release created by hand) — the manual escape
+#     hatch, publishing whatever tag the release names;
+#   - `workflow_call` from `release.yml`, which bumps the version on `main`, tags
+#     it and creates the Release in that same run. The call is explicit because a
+#     Release created with the workflow's own `GITHUB_TOKEN` does not start
+#     another workflow run — the `release:` trigger would never fire for it.
+#
+# `package.json` carries the published version; the tag only selects the commit.
+# The two are checked against each other and the run fails when they disagree,
+# which is how the `v0.2.1` release once published `0.2.0` from a manifest that
+# had never been bumped.
+#
+# `pnpm publish` is the only step that talks to the registry, and it is preceded
+# by two gates: `pnpm check` (typecheck, build, tests under coverage, resource
+# audit) and a look inside the tarball itself. The tarball gate exists because
+# the gate that builds and the job that publishes are not the same checkout
+# unless something says so: `lib/` is git-ignored, so a publish run without its
+# build step ships a package whose `main` does not exist.
 
 name: Node.js Package
 
 on:
   release:
     types: [created]
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to publish; empty means the release tag, or the triggering ref
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+    # Mirrors the checkout's `ref:` below for the shell steps; the checkout
+    # cannot read `env`, so the expression is repeated there.
+    env:
+      REF: ${{ inputs.ref || github.event.release.tag_name || github.ref }}
 
-  publish-npm:
-    needs: build
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.event.release.tag_name || github.ref }}
+          # The version comes from `package.json`, not from git: no history is
+          # needed, and the ref above is the tag or the release's tag name.
+          fetch-depth: 1
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org/
           cache: pnpm
+
       - run: pnpm install --frozen-lockfile
-      - run: pnpm publish --no-git-checks
+
+      - name: The manifest and the tag carry one version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [[ "$REF" == refs/tags/* || "$REF" == v* ]]; then
+            tag="${REF#refs/tags/}"
+            if [[ "$tag" != "v$version" ]]; then
+              echo "::error::tag $tag does not match package.json $version — bump the manifest, do not retag"
+              exit 1
+            fi
+            echo "publishing $version from tag $tag"
+          else
+            echo "::warning::ref $REF is not a tag; publishing package.json's $version unverified against a tag"
+          fi
+
+      - name: Gate — typecheck, build, coverage, resource audit
+        run: pnpm check
+
+      - name: The tarball ships every path package.json promises
+        run: |
+          set -euo pipefail
+          pnpm pack > /dev/null
+          tarball="$(ls -t ./*.tgz | head -1)"
+          echo "inspecting $tarball"
+          contents="$(tar tzf "$tarball")"
+          for entry in package/lib/index.js package/lib/client.js package/cordis.patch.yml package/locale/en.json; do
+            if ! grep -qx "$entry" <<< "$contents"; then
+              echo "::error::$tarball is missing $entry"
+              exit 1
+            fi
+          done
+          echo "$tarball carries $(wc -l <<< "$contents") entries"
+
+      - name: Publish to npm
+        run: pnpm publish --no-git-checks
         env:
-          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: The registry serves the version this run published
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          # The registry's read side can trail the write by a moment, so a miss
+          # is retried rather than reported: a false alarm here, after a publish
+          # that did happen, would send someone looking for a package that exists.
+          for attempt in 1 2 3 4 5; do
+            published="$(npm view "dsh-project-mcp@$version" version 2> /dev/null || true)"
+            if [[ "$published" == "$version" ]]; then
+              echo "npm serves dsh-project-mcp@$published"
+              exit 0
+            fi
+            echo "attempt $attempt: npm answers '${published}' for dsh-project-mcp@$version"
+            sleep 5
+          done
+          echo "::error::npm does not serve dsh-project-mcp@$version after a successful publish"
+          exit 1

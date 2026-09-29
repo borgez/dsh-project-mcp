@@ -1,10 +1,10 @@
 /**
  * Host HTTP surface for the sidebar panel.
  *
- * `ctx.betterSidebar` exists only in the browser half of a DSH composition, so
+ * The browser half of a DSH composition is a different process from this one, so
  * the panel cannot call the `projectMcp` service in process: it fetches these
- * routes, the same way `dsh-better-sidebar` serves its own `/sidebar/api/*`
- * surface. Every response is `{ ok: true, value }` or `{ ok: false, error }`.
+ * routes, which is how every browser-facing service in DSH reaches its host.
+ * Every response is `{ ok: true, value }` or `{ ok: false, error }`.
  *
  * @module dsh-project-mcp/ui
  */
@@ -169,6 +169,21 @@ const SAVE_STATUS: Record<SaveErrorCode, number> = {
 }
 
 /**
+ * HTTP status a `GET tool` refusal answers with: the same vocabulary, one
+ * different reading.
+ *
+ * A save or a policy change names something the panel is looking at *and
+ * edits*, so a name this host does not know is a malformed request there —
+ * `400`. A tool read is a *fetch* of a row the panel already drew, so an
+ * unknown project, session or name means the picture moved under it, which is
+ * exactly what `404` says: `GET logs` answers the same question the same way.
+ */
+const TOOL_STATUS: Record<SaveErrorCode, number> = {
+  ...SAVE_STATUS,
+  'not-found': 404,
+}
+
+/**
  * Read one numeric query parameter.
  *
  * The panel decides the window, so the host refuses rather than guesses: a
@@ -300,6 +315,49 @@ export function createRouteHandler(
           ...(limit === undefined ? {} : { limit }),
         }),
       })
+      return
+    }
+    // One tool's detail, for a row the panel opened. On demand rather than in
+    // the snapshot — descriptions and schemas are the expensive part, and every
+    // change frame and poll carries the whole snapshot — so nothing grows on the
+    // wire and the answer is fetched once per opened row. The same precedent as
+    // `logs`: the route checks that it was given three names at all and refuses
+    // a request missing one, while "this host does not know that project,
+    // session or tool" is the service's `404` rather than the route's `400`.
+    if (method === 'GET' && action === 'tool') {
+      const projectRoot = url.searchParams.get('projectRoot')
+      const sessionId = url.searchParams.get('sessionId')
+      const name = url.searchParams.get('name')
+      if (projectRoot === null || projectRoot === '') {
+        send(res, 400, {
+          ok: false,
+          error: { code: 'bad-request', message: 'GET tool needs a projectRoot' },
+        })
+        return
+      }
+      if (sessionId === null || sessionId === '') {
+        send(res, 400, {
+          ok: false,
+          error: { code: 'bad-request', message: 'GET tool needs a sessionId' },
+        })
+        return
+      }
+      if (name === null || name === '') {
+        send(res, 400, {
+          ok: false,
+          error: { code: 'bad-request', message: 'GET tool needs a name' },
+        })
+        return
+      }
+      const outcome = service.toolFacts(projectRoot, sessionId, name)
+      if (!outcome.ok) {
+        send(res, TOOL_STATUS[outcome.code], {
+          ok: false,
+          error: { code: outcome.code, message: outcome.message },
+        })
+        return
+      }
+      send(res, 200, { ok: true, value: outcome.value })
       return
     }
     if (method === 'POST' && action === 'retry') {

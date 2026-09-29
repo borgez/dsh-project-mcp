@@ -1,9 +1,9 @@
 /**
  * Contract shared by the host half and the browser half of the panel.
  *
- * Import-free on purpose: the client bundle must not pull host code in, and
- * `ctx.betterSidebar` exists only in the browser, so the two halves meet at
- * these routes over HTTP.
+ * Import-free on purpose: the client bundle must not pull host code in, and the
+ * right sidebar exists only in the browser half, so the two halves meet at these
+ * routes over HTTP.
  *
  * @module dsh-project-mcp/shared
  */
@@ -31,6 +31,12 @@ export const ROUTE_ACTIONS = {
   events: 'events',
   /** `GET`: one page of a project's log ring, oldest first, for "show older". */
   logs: 'logs',
+  /**
+   * `GET`: one tool's detail — its description, its accepted fields, its
+   * measured size and the reason it is not offered — read once per opened row
+   * so that neither the snapshot nor a change frame carries it.
+   */
+  tool: 'tool',
   /** `POST`: release this session's mounts. */
   release: 'release',
   /** `POST`: write one edited entry back to its declaring document. */

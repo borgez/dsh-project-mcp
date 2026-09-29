@@ -27,7 +27,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement as h } from 'react'
 import type { ReactNode } from 'react'
-import { ROUTE_ACTIONS, ROUTE_PREFIX, TAB_ID } from '../src/shared.ts'
+import { ROUTE_ACTIONS, ROUTE_PREFIX } from '../src/shared.ts'
 import type {
   LogEvent,
   McpSnapshot,
@@ -44,7 +44,7 @@ import {
   LOGS_CLEARED_KEY,
   LOG_LEVEL_KEY,
   LOG_SCOPE_KEY,
-  REFRESH_KEY,
+  REFRESH_STORAGE_KEY,
   LogsView,
   ProjectMcpPanel,
   ProjectMcpSettings,
@@ -57,12 +57,11 @@ import {
   logsClearedAt,
   persistLogFilter,
   persistLogsClearedAt,
-  pluginSettingsOf,
-  refreshMsOf,
   sessionBreakdown,
   translateOf,
   useSnapshot,
 } from '../src/client/view.ts'
+import { createRefreshStore, storedRefreshMs } from '../src/client/view.ts'
 import type { PanelStorage, Translate } from '../src/client/view.ts'
 
 /* -------------------------------------------------------------------------- */
@@ -1447,15 +1446,15 @@ describe('the Logs mode', () => {
 
 function mountSettings(
   props: Partial<{
-    pluginSettings: Record<string, unknown>
-    updatePluginSetting: (key: string, value: unknown) => void
+    refreshMs: number
+    onRefreshMs: ((value: number) => void) | undefined
     onClose: (() => void) | undefined
     t: Translate | undefined
   }> = {},
 ): ReturnType<typeof mountComponent<Parameters<typeof ProjectMcpSettings>[0]>> {
   return mountComponent(ProjectMcpSettings, {
-    pluginSettings: { [REFRESH_KEY]: 2_000 },
-    updatePluginSetting: () => undefined,
+    refreshMs: 2_000,
+    onRefreshMs: () => undefined,
     t,
     ...props,
   })
@@ -1664,20 +1663,34 @@ describe('the panel’s storage and settings seams', () => {
     expect(() => persistLogsClearedAt(1_000)).not.toThrow()
   })
 
-  it('reads the poll interval out of the settings blob, and defaults anything else', () => {
-    expect(refreshMsOf({ [REFRESH_KEY]: 2_500 })).toBe(2_500)
-    for (const value of ['soon', 0, -1, Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
-      expect(refreshMsOf({ [REFRESH_KEY]: value })).toBe(DEFAULT_REFRESH_MS)
+  it('reads the poll interval out of browser storage, and defaults anything else', () => {
+    const storage = installStorage({ [REFRESH_STORAGE_KEY]: '2500' })
+
+    expect(storedRefreshMs(storage)).toBe(2_500)
+    for (const value of ['soon', '0', '-1', 'NaN', 'Infinity', '']) {
+      storage.values[REFRESH_STORAGE_KEY] = value
+      expect(storedRefreshMs(storage)).toBe(DEFAULT_REFRESH_MS)
     }
-    expect(refreshMsOf({})).toBe(DEFAULT_REFRESH_MS)
+    delete storage.values[REFRESH_STORAGE_KEY]
+    expect(storedRefreshMs(storage)).toBe(DEFAULT_REFRESH_MS)
   })
 
-  it('reads this plugin’s own blob out of the sidebar snapshot', () => {
-    const blob = { [REFRESH_KEY]: 1_000 }
+  it('publishes a new interval to every subscriber, and persists it first', () => {
+    const storage = installStorage({ [REFRESH_STORAGE_KEY]: '2000' })
+    const store = createRefreshStore(storage)
+    const seen: number[] = []
+    const stop = store.subscribe(() => seen.push(store.get()))
 
-    expect(pluginSettingsOf({ prefs: { pluginSettings: { [TAB_ID]: blob } } })).toBe(blob)
-    expect(pluginSettingsOf({ prefs: {} })).toEqual({})
-    expect(pluginSettingsOf({ prefs: { pluginSettings: { other: { x: 1 } } } })).toEqual({})
+    expect(store.get()).toBe(2_000)
+    store.set(7_500)
+    store.set(7_500)
+    store.set(0)
+    store.set(Number.NaN)
+    expect(seen).toEqual([7_500])
+    expect(storage.values[REFRESH_STORAGE_KEY]).toBe('7500')
+    stop()
+    store.set(9_000)
+    expect(seen).toEqual([7_500])
   })
 
   it('names a project by its last path segment, and has nothing to name for an empty path', () => {

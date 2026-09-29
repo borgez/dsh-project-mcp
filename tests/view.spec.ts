@@ -1752,7 +1752,8 @@ describe('layout parity with the mockup', () => {
     expect(head?.props['aria-expanded']).toBe(false)
     // The row is the tool line itself: the head button carries the name.
     expect(texts(head ?? null)).toContain('mcp__tglider__workspace')
-    // Closed draws no detail block at all.
+    // Closed draws no detail block at all, and asks the host for nothing.
+    expect(texts(closed).join(' ')).not.toContain(t('toolLoading'))
     expect(texts(closed).join(' ')).not.toContain(t('toolsStep', { step: 4 }))
 
     const open = elements(
@@ -1766,18 +1767,20 @@ describe('layout parity with the mockup', () => {
         ),
       ),
     )
-    // The block is the element indented one rung in from the row; the facts keep
-    // the pre-wrap treatment the surface gives every host-published text.
+    // The block is the element indented one rung in from the row. `view.ts`
+    // resolves without a host and without a route here, so what it draws is the
+    // one line that says the read is on its way (F-56) — the body is loaded, not
+    // invented, and this spec walks a tree without promises in it.
     const detail = open.find(
       (element) =>
         style(element).paddingLeft === 12 || String(style(element).padding ?? '').endsWith('12px'),
     )
-    const facts = open.find((element) => style(element).whiteSpace === 'pre-wrap')
 
     expect(open.find((element) => element.type === 'button')?.props['aria-expanded']).toBe(true)
-    expect(texts(detail ?? null).join(' · ')).toContain('mcp__tglider__workspace')
-    expect(texts(facts ?? null).join(' · ')).toContain(t('toolServer', { server: 'tglider' }))
-    expect(texts(facts ?? null).join(' · ')).toContain(t('toolTierPinned'))
+    expect(texts(detail ?? null).join(' · ')).toBe(t('toolLoading'))
+    // The header is where the name, the clock and the step are read now: the body
+    // no longer repeats any of them.
+    expect(texts(detail ?? null).join(' · ')).not.toContain('mcp__tglider__workspace')
   })
 
   it('keeps `.muted` at the text’s own size and gives it no opacity trick', () => {

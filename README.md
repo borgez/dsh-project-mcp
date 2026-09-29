@@ -48,6 +48,7 @@ other tool's file) is one config line away, never an implicit second source.
 - [Resource behaviour](#resource-behaviour)
 - [Runtimes](#runtimes)
 - [Verifying](#verifying)
+- [Releasing](#releasing)
 - [Limitations](#limitations)
 - [Dogfooding](#dogfooding)
 
@@ -58,9 +59,9 @@ Implementation notes: [how it works](#how-it-works) · [bundle format](#bundle-f
 ```bash
 pnpm install && pnpm check        # typecheck + build + tests under the coverage gate + resource audit
 pnpm coverage                     # the same suite with the coverage report only
-pnpm pack                         # -> dsh-project-mcp-0.2.0.tgz
-mv dsh-project-mcp-0.2.0.tgz ~/.dsh/packages/
-dsh plugin --profile web add file:$HOME/.dsh/packages/dsh-project-mcp-0.2.0.tgz
+pnpm pack                         # -> dsh-project-mcp-<version>.tgz (builds first, via prepack)
+mv dsh-project-mcp-<version>.tgz ~/.dsh/packages/
+dsh plugin --profile web add file:$HOME/.dsh/packages/dsh-project-mcp-<version>.tgz
 ```
 
 `pnpm check` runs the suite through `--coverage`, and `vitest.config.ts` gates all
@@ -565,9 +566,11 @@ a clock:
 
 ## Sidebar panel
 
-The package has a browser half (`./client`) that registers a tab with
-[`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar). A tab
-belongs to one conversation, so it shows **only that session's project** — never
+The package has a browser half (`./client`) that registers a tab type with DSH's
+**own right sidebar** — `ctx.sidebarRightTabs` for the type, the keyed
+`sidebar.right.pane.tab` seat for the body (see `src/client/sidebar-tab.ts`) —
+which the sidebar's guide page lists. A tab belongs to one conversation, so it
+shows **only that session's project** — never
 another one: the servers it declares and their merged live status, then the same
 project broken down **per session** — which session holds a mount, which has not
 turned yet, which one is this tab's — with `Sync` / `Release` actions. `Release`
@@ -590,12 +593,14 @@ that has nothing to list names what is missing instead of showing an empty box �
 no session, no project marker above the session cwd, no declared server, or
 nothing that needs attention.
 
-The same tab declares its own settings panel in the side card settings popup, and
-that panel is where the whole picture lives: **every** project with a live
-session, not just this tab's, plus the panel's poll interval, persisted in the
-sidebar's `pluginSettings`.
+The tab chip's actions menu carries one row of this plugin's own — `Panel
+settings…` — and the popup it opens is where the whole picture lives: **every**
+project with a live session, not just this tab's, plus the panel's poll interval,
+persisted in browser-local storage (`dsh-project-mcp:servers:refreshMs`). The row
+dismisses the menu and the popup renders in DSH's `shell.overlay` floating layer,
+so it outlives the menu it was opened from.
 
-`ctx.betterSidebar` exists only in the browser half, so the panel does not call
+The browser half runs in its own process, so the panel does not call
 the runtime in process: the host half registers HTTP routes on the DSH web server
 (`/project-mcp/snapshot|events|logs|sync|retry|release|save|pin|policy`, see
 `src/ui.ts`) and the panel fetches them. Responses are `{ ok: true, value }` or
@@ -636,14 +641,16 @@ what the `change` frames of `GET /project-mcp/events` say, and the baseline
 servers starting at once.
 
 ```
-browser:  ctx.inject(['betterSidebar'], s => s.betterSidebar.registerTab({ … }))
+browser:  ctx.inject(['slots', 'sidebarRightTabs'], s => s.sidebarRightTabs.register({ id, kind, … }))
+          s.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel)
           fetch('/project-mcp/snapshot')
 host:     ctx.webServer.register({ kind: 'prefix', path: '/project-mcp', … })
 ```
 
-Requirements: `react` in the composition. If the host already provides a
-`betterSidebar` service, the sidebar tab is registered; otherwise the host half
-keeps mounting servers. Client changes hot-reload (hard-refresh the browser);
+Requirements: `react` in the composition. If the composition has DSH's right
+sidebar (`slots` + `sidebarRightTabs`), the tab type is registered; otherwise the
+host half keeps mounting servers and the settings page, the configuration card and
+the toasts still work. Client changes hot-reload (hard-refresh the browser);
 host changes need a `dsh web` restart.
 
 ### Settings page
@@ -688,13 +695,13 @@ ctx.inject(['slots', 'locale'], (scope) => {          // optional client service
 })
 ```
 
-The module-level `inject` is empty, and neither `betterSidebar` nor `locale` is
-listed there: an entry that waits on an optional service stays **pending**, and
-DSH's web boot audit refuses to start while any entry is pending. Both are read
-without gating the entry instead — the sidebar tab parks behind
-`ctx.inject(['betterSidebar'], …)` (so it registers whenever that service exists,
-in a composition that has one), and the tab's translate seat comes from
-`ctx.get('locale')`. A property read of a service the fiber did not declare
+The module-level `inject` is empty, and neither `slots`, nor `sidebarRightTabs`,
+nor `locale` is listed there: an entry that waits on an optional service stays
+**pending**, and DSH's web boot audit refuses to start while any entry is pending.
+All three are read without gating the entry instead — the tab type and its two
+seats park behind `ctx.inject(['slots', 'sidebarRightTabs'], …)` (so they register
+whenever the composition has a right sidebar), and the tab's translate seat comes
+from `ctx.get('locale')`. A property read of a service the fiber did not declare
 throws `cannot get property "…" without inject` and fails the entry, which is
 what took the whole GUI down in 0.1.9. The host half and every slot-based surface
 continue without either service. The bundle requests
@@ -866,6 +873,38 @@ Manual acceptance on a running GUI:
 4. Editing the file adds/removes tools after the debounce (~300 ms), without a
    restart and without disturbing the profile-level servers.
 
+## Releasing
+
+`package.json`'s `version` is the published version; a `v<version>` tag only selects
+the commit, and the two are checked against each other before every publish.
+
+Every push to `main` releases, when the commits since the last tag ask for one
+(Conventional Commits: `feat` → minor, `fix`/`perf`/`revert` → patch, `!` or a
+`BREAKING CHANGE:` paragraph → major; `docs`, `chore`, `ci`, `test` and `refactor`
+release nothing on their own). `.github/workflows/release.yml` runs the full
+`pnpm check` gate, decides the version with `scripts/next-version.mjs`, writes that one
+line of `package.json`, commits it as `release: dsh-project-mcp <version>`, tags it,
+creates the GitHub Release, and calls `npm-publish.yml` to publish the tag to npm —
+called rather than triggered, because a Release created with the workflow's own
+`GITHUB_TOKEN` starts no other run. The decision reads both `package.json` and the
+highest `v*` tag and takes the newer of the two, so a tag that outran its manifest
+cannot publish the wrong number twice; before tagging, the job refuses to reuse a tag
+or an already-published version rather than failing later inside `npm publish`.
+
+To see what the next push would release:
+
+```bash
+node scripts/next-version.mjs                 # the decision, as JSON (nothing is written)
+node scripts/next-version.mjs --bump patch    # force a level over a docs-only range
+```
+
+The `Release` workflow also has a manual entry point (*Run workflow*: `bump`, `dry_run`)
+for re-driving a run that died between its tag and npm. To publish by hand, create a
+GitHub Release for a tag whose `package.json` already carries that version; the publish
+job fails loudly when the two disagree. `pnpm pack` builds by itself (`prepack`), so a
+hand-made tarball cannot ship the package without its `lib/` — the shape the published
+`0.2.0` had.
+
 ## Limitations
 
 - Per-project cost: one MCP instance per project per server, shared by every
@@ -973,8 +1012,9 @@ src/usage.ts       durable per-project tool-call counters
 src/policy.ts      durable per-project tool policy: mode (disclosure/direct/off), pins
 src/guidance.ts    project-MCP guidance section: deterministic text + wiring
 src/types.ts       snapshot/row vocabulary
-src/client/        browser half: sidebar tab, side card settings, native
-                   Settings page (`settings.section`), shared view helpers
+src/client/        browser half: the right-sidebar tab and its settings popup,
+                   the native Settings page (`settings.section`), shared view
+                   helpers
 tests/             unit tests (parse, discovery, runtime, guidance, both views),
                    plus a load-path guard for the wrapped client bundle
 scripts/           MCP fixture server, live smoke test, resource audit,

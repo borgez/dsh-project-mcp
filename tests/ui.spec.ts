@@ -56,6 +56,13 @@ function fakeService(overrides: Partial<ProjectMcpService> = {}) {
     setPin: () => ({ ok: true, snapshot: SNAPSHOT }),
     setPolicy: () => ({ ok: true, snapshot: SNAPSHOT }),
     setConflictChoice: () => ({ ok: true, snapshot: SNAPSHOT }),
+    // `GET tool` is covered by `tests/tool-detail.spec.ts`; here the stub only
+    // carries the interface, and a call records the three names it was asked
+    // for so this file's route surface stays the ones it pins.
+    toolFacts: (projectRoot, sessionId, name) => {
+      calls.push(`toolFacts:${projectRoot}:${sessionId}:${name}`)
+      return { ok: false, code: 'not-found', message: `no tool ${name}` }
+    },
     subscribe: () => () => undefined,
     ...overrides,
   }

@@ -45,6 +45,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown && node scripts/wrap-client.mjs",
+    "prepack": "pnpm build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
@@ -77,13 +78,9 @@
     "@deepseek-ai/cordis": ">=4.0.2",
     "@deepseek-ai/dsh-mcp-client": ">=0.2.0-rc.2",
     "@deepseek-ai/dsh-scope": ">=0.2.0-rc.2",
-    "dsh-better-sidebar": ">=0.19.0",
     "react": ">=18.2.0"
   },
   "peerDependenciesMeta": {
-    "dsh-better-sidebar": {
-      "optional": true
-    },
     "react": {
       "optional": true
     }
@@ -92,16 +89,15 @@
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-mcp-client": "0.2.0-rc.2",
     "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@types/node": "^22.20.4",
     "@types/react": "^18.3.31",
     "@vitest/coverage-v8": "^5.0.2",
     "@vitest/ui": "5.0.2",
-    "dsh-better-sidebar": "^0.24.1",
     "react": "^18.3.1",
     "tsdown": "^0.23.0",
-    "unrun": "^0.3.1",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2"
+    "unrun": "^0.3.1",
+    "vitest": "^5.0.2"
   }
 }

@@ -26,10 +26,11 @@ import type {
   ServerUsage,
   SessionSnapshot,
   SessionTools,
+  ToolFacts,
   ToolPolicy,
 } from '../types.ts'
 import type { ToastDraft } from './toasts.ts'
-import { STATUS_HINT } from './view.ts'
+import { STATUS_HINT, seedToolFacts } from './view.ts'
 
 /** Session the fixtures belong to; `shortSessionId` renders it as `8fce1c`. */
 export const DESIGN_SESSION = 'session-8fce1c-4a3f-4d0b-9c11-2f6a7b8c9d10'
@@ -91,6 +92,97 @@ export const DESIGN_USAGE: Record<string, ServerUsage> = {
     lastUsedAt: new Date(Date.now() - DESIGN_IDLE_MS * 2).toISOString(),
     tools: { docs: 12 },
   },
+}
+
+/**
+ * The definitions the stand's own host publishes (F-56).
+ *
+ * The body of an opened row is answered by `GET tool`, a route the stand has no
+ * host behind: without these records every open row of the design surfaces would
+ * sit on a read that never lands. The records are the picture's own — they agree
+ * with {@link DESIGN_USAGE} (`workspace` was called, `catalog` never) and with
+ * {@link designTools} — so the stand draws the real body: a description, a field
+ * list with one required field and one nested object drawn as its type, and the
+ * reason a deferred name is not in the request.
+ *
+ * They are seeded into the panel's own cache ({@link designProject} calls
+ * {@link seedDesignToolFacts}), not branched on inside the row: `view.ts` has no
+ * code path that knows whether an answer came from a socket, and the stand must
+ * render the product's body rather than a second drawing of it.
+ */
+export const DESIGN_TOOL_FACTS: Record<string, ToolFacts> = {
+  'mcp__tglider__workspace': {
+    name: 'mcp__tglider__workspace',
+    description:
+      'Workspace overview: changed symbols, diagnostics and the files that carry them, as one page.',
+    fields: [
+      {
+        name: 'path',
+        type: 'string',
+        required: true,
+        description: 'Directory to read, relative to the project root.',
+      },
+      {
+        name: 'depth',
+        type: 'number',
+        required: false,
+        description: 'How deep the dependency walk may go.',
+      },
+      {
+        // An object field is drawn as its own type and not expanded: the panel
+        // lists what a call takes, it does not mirror the schema.
+        name: 'filters',
+        type: 'object',
+        required: false,
+        description: 'Per-file overrides; the server documents their shape.',
+      },
+    ],
+  },
+  // No fields at all, so the stand also shows the rule that an empty group draws
+  // no heading rather than an empty list under it.
+  'mcp__tglider__catalog': {
+    name: 'mcp__tglider__catalog',
+    description: 'Every tool the server declares, with the size of each definition.',
+    fields: [],
+  },
+  'mcp__grafana-local__query': {
+    name: 'mcp__grafana-local__query',
+    description: 'Run one PromQL query against a dashboard’s data source.',
+    fields: [
+      { name: 'query', type: 'string', required: true, description: 'The PromQL expression.' },
+      { name: 'range', type: 'string', required: false },
+    ],
+  },
+  'mcp__context7__docs': {
+    name: 'mcp__context7__docs',
+    description: 'Documentation pages for one library, ranked by the question asked.',
+    fields: [],
+  },
+  'mcp__playwright__navigate': {
+    name: 'mcp__playwright__navigate',
+    description: 'Open a URL in the browser and wait for the page to settle.',
+    fields: [{ name: 'url', type: 'string', required: true, description: 'Absolute URL to open.' }],
+    // Every figure is one the picture's own host measured, which is the whole
+    // point of the reason line: the panel prints no size it computed itself.
+    reason: { kind: 'budget', chars: 1_240, budget: 8_000, used: 6_900 },
+  },
+  'mcp__rider__open': {
+    name: 'mcp__rider__open',
+    description: 'Open one file in the IDE at a line.',
+    fields: [{ name: 'path', type: 'string', required: true }],
+    reason: { kind: 'budget', chars: 640, budget: 8_000 },
+  },
+}
+
+/**
+ * Publish the picture's definitions into the panel's cache.
+ *
+ * Idempotent and cheap: called from {@link designProject}, which every design
+ * surface renders through, so a fixture body is always seeded before the first
+ * row can be opened. Seeding the same record twice is the same record.
+ */
+export function seedDesignToolFacts(): void {
+  for (const [name, facts] of Object.entries(DESIGN_TOOL_FACTS)) seedToolFacts(name, facts)
 }
 
 /** One lifecycle event, as the ring stores it. */
@@ -320,6 +412,9 @@ function sessionOf(variant: DesignVariant): SessionSnapshot[] {
  */
 export function designProject(variant: DesignVariant): ProjectSnapshot | undefined {
   if (variant === 'no-project' || variant === 'no-session') return undefined
+  // The stand's own host answers (F-56): an opened row reads the definitions
+  // from the cache the product reads, seeded here because there is no route.
+  seedDesignToolFacts()
   const rows = mergedRows(variant)
   const logs = variant === 'full' ? DESIGN_EVENTS : variant === 'tools-absent' ? DESIGN_PENDING_EVENT : []
   const sessions = sessionOf(variant)

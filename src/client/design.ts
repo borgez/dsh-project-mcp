@@ -28,10 +28,10 @@
 import { createElement as h, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import type { BetterSidebarService, TabDescriptor } from 'dsh-better-sidebar'
-import { TAB_ID } from '../shared.ts'
 import { en, ru, zh } from './locales/ui.ts'
 import { NS_HOST, en as hostEn, ru as hostRu, zh as hostZh, hostTranslate } from './locales/host.ts'
+import { registerSidebarTab } from './sidebar-tab.ts'
+import type { SidebarSettingsProps, SidebarTabBodyProps, SidebarTabServices } from './sidebar-tab.ts'
 import {
   DEFAULT_SETTINGS_VIEW,
   NS,
@@ -51,8 +51,10 @@ import type { ToastsServices } from './toasts.ts'
 import {
   PanelHeader,
   ProjectBlock,
+  RefreshRow,
   STYLE,
   browserStorage,
+  createRefreshStore,
   sessionLogCount,
   statusGroups,
   storedString,
@@ -169,16 +171,20 @@ export function DesignPanel(props: {
 }
 
 /**
- * The tab's own settings popover, drawn from a picture.
+ * The tab's own settings popup, drawn from a picture.
  *
- * Same shape as `ProjectMcpSettings`, minus the poll: the bar names the surface,
- * counts the projects and offers `Sync`/`Close`, and the body renders one
- * `ProjectBlock` per project — the product's own component, fed here.
- * @param props - the picture, the close seat and the translate seat.
- * @returns the popover element tree.
+ * Same shape as `ProjectMcpSettings`: the poll-interval row first, then the bar
+ * that names the surface, counts the projects and offers `Sync`/`Close`, and a
+ * body rendering one `ProjectBlock` per project — the product's own components,
+ * fed here. The row is shared with the product rather than redrawn, so the two
+ * cannot drift on the control this port moved into the popup.
+ * @param props - the picture, the interval, the close seat and the translate seats.
+ * @returns the popup element tree.
  */
 export function DesignPopup(props: {
   variant: DesignVariant
+  refreshMs: number
+  onRefreshMs?: ((value: number) => void) | undefined
   onClose?: (() => void) | undefined
   t?: Translate | undefined
   /** Host-namespace seat for the fixtures' coded payload fields (F-48). */
@@ -200,6 +206,7 @@ export function DesignPopup(props: {
         ? null
         : h('button', { style: STYLE.button, onClick: () => props.onClose?.() }, t('close')),
     ),
+    h(RefreshRow, { refreshMs: props.refreshMs, onRefreshMs: props.onRefreshMs, t }),
     h(
       'div',
       { style: STYLE.body },
@@ -282,37 +289,42 @@ export function DesignSettingsTab(props: {
 }
 
 /**
- * The tab panel with its translate seat, the way the real entry composes it.
- * @param props - the picture, the session and the locale service.
- * @returns the localized panel.
+ * The tab body the entry hands to {@link registerSidebarTab}.
+ *
+ * The entry already bound both translate seats, so the adapter only forwards the
+ * framework's own session and the fixture the mode was started with — the
+ * product's own adapter (`LocalizedPanel` in `./index.ts`) does the same with the
+ * real panel.
+ * @param props - the body's props, seats included.
+ * @returns the fixture panel.
  */
-function LocalizedDesignPanel(props: {
-  locale: TabLocale | undefined
-  variant: DesignVariant
-  sessionId: string | undefined
-}): ReactNode {
-  const t = useTabTranslate(props.locale)
-  const hostT = hostTranslate(props.locale)
-  return h(DesignPanel, { variant: props.variant, sessionId: props.sessionId, t, hostT })
+export function LocalizedDesignPanel(props: SidebarTabBodyProps & { variant?: DesignVariant }): ReactNode {
+  const variant = props.variant ?? 'full'
+  return h(DesignPanel, { variant, sessionId: props.sessionId, t: props.t, hostT: props.hostT })
 }
 
 /**
- * The tab's popover with its translate seat.
- * @param props - the picture, the close seat and the locale service.
- * @returns the localized popover.
+ * The settings popup's fixture content.
+ *
+ * Same chrome as the product's popup — the poll-interval row first, then the
+ * per-project blocks — with the stand's fixtures behind it. The interval row is
+ * the shared {@link RefreshRow}, so the stand cannot drift from the product on
+ * the control the port moved here.
+ * @param props - the popup's props, seats included, plus the fixture variant.
+ * @returns the fixture popup.
  */
-function LocalizedDesignPopup(props: {
-  locale: TabLocale | undefined
-  variant: DesignVariant
-  onClose?: (() => void) | undefined
-}): ReactNode {
-  const t = useTabTranslate(props.locale)
-  // The stand's popover renders the same coded payloads the product does, so
-  // it binds the host seat too — an unregistered namespace echoes and the
-  // fixtures show their English, exactly like the product's fallback.
-  const hostT = hostTranslate(props.locale)
-  return h(DesignPopup, { variant: props.variant, onClose: props.onClose, t, hostT })
+export function LocalizedDesignPopup(props: SidebarSettingsProps & { variant?: DesignVariant }): ReactNode {
+  const variant = props.variant ?? 'full'
+  return h(DesignPopup, {
+    variant,
+    refreshMs: props.refreshMs,
+    onRefreshMs: props.onRefreshMs,
+    onClose: props.onClose,
+    t: props.t,
+    hostT: props.hostT,
+  })
 }
+
 
 /**
  * The frame-wide toast stack, repeating its three fixture banners.
@@ -348,7 +360,7 @@ export function registerDesignToasts(services: ToastsServices): void {
 /**
  * Register the fixture surfaces on the browser half.
  *
- * Mirrors `apply`'s own wiring exactly — the tab behind `betterSidebar`, the
+ * Mirrors `apply`'s own wiring exactly — the tab behind the right sidebar's
  * settings page behind `slots` + `locale`, the toasts behind `slots` alone — so
  * the design mode is a drop-in replacement for the real one and a composition
  * missing a service behaves the same way in both.
@@ -362,25 +374,26 @@ export function registerDesignSurfaces(
   const locale = localeServiceOf(ctx)
   const t = tabTranslate(locale)
 
-  ctx.inject(['betterSidebar'], (scope) => {
-    const betterSidebar = (scope as unknown as { betterSidebar: BetterSidebarService }).betterSidebar
-    scope.effect(() =>
-      betterSidebar.registerTab({
-        id: TAB_ID,
+  // The same four seats the product registers, from the fixtures: the stand has
+  // to draw the surface the port produced — a right-sidebar tab, one actions-menu
+  // row and the popup in the frame-wide floating layer — or it would be comparing
+  // the product against a surface that no longer exists.
+  ctx.inject(['slots', 'sidebarRightTabs'], (scope) => {
+    registerSidebarTab(scope as unknown as SidebarTabServices, {
+      locale,
+      // The stand reads and writes the same browser-local interval the product
+      // does, so the row a designer presses there behaves exactly like the row
+      // the product shows.
+      refresh: createRefreshStore(),
+      body: (props) =>
+        h(LocalizedDesignPanel, { ...props, variant }),
+      settings: (props) =>
+        h(LocalizedDesignPopup, { ...props, variant }),
+      copy: {
         title: () => t('designTitle', { variant }),
         description: () => t('designDesc', { variant }),
-        order: 55,
-        single: true,
-        settings: {
-          render: (
-            props: Parameters<NonNullable<NonNullable<TabDescriptor['settings']>['render']>>[0],
-          ) =>
-            h(LocalizedDesignPopup, { locale, variant, onClose: props.close }),
-        },
-        component: (props: Parameters<TabDescriptor['component']>[0]) =>
-          h(LocalizedDesignPanel, { locale, variant, sessionId: props.scope.sessionId }),
-      }),
-    )
+      },
+    })
   })
 
   ctx.inject(['slots', 'locale'], (scope) => {

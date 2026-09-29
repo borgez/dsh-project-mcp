@@ -1468,18 +1468,29 @@ body {
     </p>
   </section>
   <!-- ═══════════════════════════════════════════════════════════════════════
-       §2 THE TAB'S SETTINGS DRAWER — side card (settings.render of the tab descriptor)
+       §2 THE TAB'S SETTINGS POPUP — opened from the tab chip's actions menu
        ═══════════════════════════════════════════════════════════════════════ -->
   <section id="popup">
-    <h2>2. The tab's settings drawer</h2>
+    <h2>2. The tab's settings popup</h2>
     <p class="d-lead">
-      The tab's own popover (<code>settings.render</code> in <code>betterSidebar.registerTab</code>), not a page:
+      The tab's own popup, opened from the one row this plugin adds to the tab chip's actions menu
+      (<code>sidebar.right.tab.menu.item</code>; the popup itself is a <code>shell.overlay</code> entry), not a page:
       it shows <b>all</b> projects with a live session, so the bar carries <code>Mounted per project</code>,
       the project count and <code>Close</code>. A project's block is the same server rows as in the tab and
-      the same one-line divergence section.
+      the same one-line divergence section. The poll interval's row sits above the bar.
     </p>
     <div style="max-width:451px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-specific-sidebar-fill);padding:6px 12px">
       <div>
+        <!-- The interval's row (RefreshRow): the sidebar's own toggle used to draw it, and the popup owns it now. -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0 6px">
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+            <span style="font-size:12px">Refresh interval</span>
+            <span style="font-size:11px;color:var(--dsw-alias-label-tertiary)">How often the panel re-reads the host snapshot</span>
+          </div>
+          <input type="number" value="5000" min="1000" max="60000" step="500" aria-label="Refresh interval"
+                 style="width:72px;padding:2px 6px;border-radius:4px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:inherit;font:inherit">
+          <span style="font-size:11px;color:var(--dsw-alias-label-tertiary)">ms</span>
+        </div>
         <div class="panel-bar">
           <span class="name">Mounted per project</span>
           <span class="count">1 project</span>

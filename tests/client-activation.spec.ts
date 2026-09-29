@@ -7,7 +7,9 @@
  * `cannot get property "…" without inject` for a name the fiber did not declare
  * (`<harness>/vendor/cordis/src/reflect.ts`), and a throwing `apply` fails the
  * entry, which takes the whole DSH web boot down. The shipped 0.1.9 bundle did
- * exactly that by reading `ctx.locale` and `ctx.betterSidebar` as properties.
+ * exactly that by reading `ctx.locale` and `ctx.betterSidebar` as properties —
+ * and the same rule governs the services the port to the native right sidebar
+ * reads (`sidebarRightTabs`, `slots`).
  *
  * Two guards cover it: `tests/bundle.spec.ts` drives the built bundle through a
  * proxy that throws the same way, and this spec drives the source against a real
@@ -34,7 +36,7 @@ describe('the browser half against a real Cordis context', () => {
   it('answers `undefined` for the optional services instead of failing the entry', () => {
     const ctx = new Context()
 
-    expect(ctx.get('betterSidebar')).toBeUndefined()
+    expect(ctx.get('sidebarRightTabs')).toBeUndefined()
     expect(ctx.get('locale')).toBeUndefined()
   })
 

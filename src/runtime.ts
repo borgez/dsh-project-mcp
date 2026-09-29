@@ -39,6 +39,7 @@ import {
   noteUse,
   presentedNames,
   pruneIdle,
+  schemaChars,
   seedFromUsage,
   toolsFor,
 } from './activation.ts'
@@ -99,8 +100,11 @@ import type {
   SessionTools,
   SnapshotChange,
   SnapshotIssue,
+  ToolFacts,
+  ToolField,
   ToolMode,
   ToolPolicy,
+  ToolReason,
   WriteScope,
 } from './types.ts'
 import { matchServer } from './usage.ts'
@@ -284,6 +288,20 @@ export type PolicyOutcome =
       /** Flat params of {@link messageCode}, stringified at emission. */
       readonly messageParams?: Record<string, string>
     }
+
+/**
+ * Outcome of {@link ProjectMcpRuntime.toolFactsOf}: one tool's on-demand detail,
+ * or the code the route maps to a status.
+ *
+ * A refusal is a `404`: the route only asks about a project root, a session id
+ * and a name a panel read from a snapshot, so one this host does not know is a
+ * stale read rather than a malformed request — the three parameters themselves
+ * are checked by the route. The prose stays plain English and uncoded, the way
+ * `GET logs` refuses.
+ */
+export type ToolFactsOutcome =
+  | { readonly ok: true; readonly value: ToolFacts }
+  | { readonly ok: false; readonly code: SaveErrorCode; readonly message: string }
 
 /**
  * Identity of the Cordis scope one project's servers are mounted in. Every
@@ -1120,6 +1138,95 @@ export class ProjectMcpRuntime {
         `project-mcp: reading the tool presentation of session ${state.agent.id} failed: ${errorText(error)}`,
       )
       return undefined
+    }
+  }
+
+  /**
+   * One tool's on-demand detail, answered for a row a panel opened.
+   *
+   * A read, never a rescan: the definition comes from the same mount home the
+   * snapshot's session row was measured from, so a **deferred** name answers
+   * exactly like an offered one — the home's catalog carries the whole mounted
+   * surface, and only the request's own deferral decision leaves a name out of
+   * it. That is also what makes the reason honest: `budget` is reported exactly
+   * when the session's own row lists the name in `deferred`, and every figure on
+   * it is a host measurement — {@link schemaChars} of this definition, the
+   * session's `budgetChars` and its `visibleChars`. A number the host does not
+   * have is omitted rather than guessed.
+   *
+   * The published fields are the schema's top-level `parameters.properties`
+   * only: a nested object or array is drawn as its type and never expanded, and
+   * a property's `default` is never published — the schema a model reads is the
+   * definition's, and this record is a *view* of it, not a second copy with
+   * defaults baked in.
+   *
+   * @param projectRoot - project root the panel read the row from.
+   * @param sessionId - live agent id the row belongs to.
+   * @param name - public registry name, as the panel drew it.
+   * @returns the tool's facts, or the `not-found` refusal the route maps to 404.
+   */
+  toolFactsOf(projectRoot: string, sessionId: string, name: string): ToolFactsOutcome {
+    const state = this.states.get(sessionId)
+    if (state === undefined || state.projectRoot !== projectRoot) {
+      return {
+        ok: false,
+        code: 'not-found',
+        message: `no live session ${sessionId} in ${projectRoot}`,
+      }
+    }
+    const home = this.homeOf(state)
+    if (home === undefined) {
+      return {
+        ok: false,
+        code: 'not-found',
+        message: `no live session ${sessionId} in ${projectRoot}`,
+      }
+    }
+    const schema = this.schemasOf(home, state.agent.id).find(
+      (candidate) => candidate.name === name,
+    )
+    if (schema === undefined) {
+      return {
+        ok: false,
+        code: 'not-found',
+        message: `${name} is not mounted in ${projectRoot}`,
+      }
+    }
+    const fields = toolFieldsOf(schema.parameters)
+    const description = schema.description === '' ? undefined : schema.description
+    // Only a name the session's own row hides is unexplained by the request, so
+    // only such a name carries a reason; an offered one has nothing to explain.
+    const deferred = this.sessionTools(state)?.deferred ?? []
+    const reason = deferred.includes(name) ? this.budgetReason(state, schema) : undefined
+    return {
+      ok: true,
+      value: {
+        name: schema.name,
+        ...(description === undefined ? {} : { description }),
+        fields,
+        ...(reason === undefined ? {} : { reason }),
+      },
+    }
+  }
+
+  /**
+   * Why the budget left one definition out of this session's request: the host's
+   * own numbers, each omitted when the row that carries it did not measure it.
+   * @param state - the session whose row and budget are read.
+   * @param schema - the definition the row does not offer.
+   * @returns the `budget` reason, carrying only figures the host holds.
+   */
+  private budgetReason(state: AgentState, schema: ToolSchemaLike): ToolReason {
+    const tools = this.sessionTools(state)
+    return {
+      kind: 'budget',
+      chars: schemaChars(schema),
+      ...(tools === undefined
+        ? {}
+        : {
+            budget: tools.budgetChars,
+            ...(tools.visibleChars === undefined ? {} : { used: tools.visibleChars }),
+          }),
     }
   }
 
@@ -3058,11 +3165,28 @@ export class ProjectMcpRuntime {
     // can never lag behind the catalog this probe returns. Unchanged names
     // short-circuit inside, so the cost is one name comparison.
     this.syncBridge(state)
+    return this.schemasOf(home, state.agent.id)
+  }
+
+  /**
+   * The visible catalog of one mount home, read through the home's scope key.
+   *
+   * The single read both callers share: the activation probe asks for the whole
+   * catalog, and the on-demand detail route asks it for one definition — reading
+   * through the same key is what makes a deferred name answer exactly like an
+   * offered one, because the home's catalog carries the whole mounted surface
+   * and the deferral decision only lives in the request.
+   *
+   * @param home - the mount home whose registrations are read.
+   * @param agentId - the session the read is attributed to, for the warning.
+   * @returns the home's schemas, or none when the read fails.
+   */
+  private schemasOf(home: MountHome, agentId: string): ToolSchemaLike[] {
     try {
       return this.ctx.tools.schemas(home.key)
     } catch (error) {
       this.ctx.logger.warn(
-        `project-mcp: reading the tool catalog of session ${state.agent.id} failed: ${errorText(error)}`,
+        `project-mcp: reading the tool catalog of session ${agentId} failed: ${errorText(error)}`,
       )
       return []
     }
@@ -4196,6 +4320,43 @@ async function activation(fiber: MountFiber): Promise<void> {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The fields one tool definition accepts, read from its top-level
+ * `parameters.properties` in schema order.
+ *
+ * A declared object or array is drawn as its own `type` and never expanded:
+ * the record answers "what does this tool take", and a nested graph is what the
+ * model-facing schema already carries. A property published without a `type` —
+ * the JSON Schema case of `oneOf` or `$ref` — reads as `any`, the same word the
+ * row vocabulary uses for "the schema names none". A property's `default` is
+ * deliberately not part of the record: it is the host's own default for a call,
+ * never a value the tool publishes.
+ *
+ * @param parameters - the definition's JSON Schema object arguments.
+ * @returns one field per declared property; empty when the schema declares none.
+ */
+function toolFieldsOf(parameters: Record<string, unknown>): ToolField[] {
+  const properties = parameters.properties
+  if (!isRecord(properties)) return []
+  const required = new Set(stringArray(parameters.required))
+  return Object.entries(properties).map(([name, declared]) => {
+    const field = isRecord(declared) ? declared : {}
+    const type = field.type
+    const description = field.description
+    return {
+      name,
+      type: typeof type === 'string' && type !== '' ? type : 'any',
+      required: required.has(name),
+      ...(typeof description === 'string' && description !== '' ? { description } : {}),
+    }
+  })
+}
+
+/** The strings of one array value; empty for anything that is not one. */
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
 /**

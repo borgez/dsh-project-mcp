@@ -44,6 +44,7 @@ import type {
   RuntimeConfig,
   RuntimeOptions,
   SaveOutcome,
+  ToolFactsOutcome,
 } from './runtime.ts'
 import type { ConflictRequest, PinRequest, PolicyRequest, SaveRequest } from './shared.ts'
 import { UsageStore, observeToolResults } from './usage.ts'
@@ -64,6 +65,7 @@ export type {
   RuntimeConfig,
   RuntimeOptions,
   SaveOutcome,
+  ToolFactsOutcome,
   UsageSource,
 } from './runtime.ts'
 export {
@@ -487,6 +489,18 @@ export interface ProjectMcpService {
   /** Give one session's servers back now, or every mounted session's when no id is given. */
   release(agentId?: string): Promise<void>
   /**
+   * Read one tool's detail for a row a panel opened: its model-facing
+   * description, the fields its schema accepts, and the reason this session's
+   * request does not carry it. Answered on demand instead of riding the
+   * snapshot, because descriptions and schemas are the expensive part and this
+   * is read once per opened row.
+   * @param projectRoot - project root the panel read the row from.
+   * @param sessionId - live agent id the row belongs to.
+   * @param name - public registry name, as the panel drew it.
+   * @returns the tool's facts, or the coded refusal the route maps to a status.
+   */
+  toolFacts(projectRoot: string, sessionId: string, name: string): ToolFactsOutcome
+  /**
    * Write one edited entry back to the document that declares it.
    * @param request - entry body, declaring document and the revision it was read at.
    * @returns the fresh snapshot, or the coded refusal the route maps to a status.
@@ -544,6 +558,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     syncSoon: (projectRoot) => runtime.syncSoon(projectRoot),
     retry: (projectRoot) => runtime.retry(projectRoot),
     release: (agentId) => runtime.release(agentId),
+    toolFacts: (projectRoot, sessionId, name) => runtime.toolFactsOf(projectRoot, sessionId, name),
     save: (request) => runtime.saveEntry(request),
     setPin: (request) => runtime.setPin(request),
     setPolicy: (request) => runtime.setPolicy(request),
@@ -556,9 +571,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     runtime.attach(scope as unknown as AgentScopeLike)
     scope.provide(SERVICE_NAME, service)
   })
-  // The sidebar panel runs in the browser half, where it can reach neither this
-  // service nor `ctx.betterSidebar` of the host half: publish the same surface
-  // over HTTP when the composition has a web server.
+  // The sidebar panel runs in the browser half, which can reach neither this
+  // service nor the host context that owns it: publish the same surface over HTTP
+  // when the composition has a web server.
   ctx.inject(['webServer'], (scope) => {
     const webServer = (scope as unknown as { webServer?: WebServerLike }).webServer
     if (webServer === undefined) return

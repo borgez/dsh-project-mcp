@@ -410,10 +410,15 @@ export function surfaceChars(schemas: readonly ToolSchemaLike[]): number {
  * {@link surfaceChars} sums, so a caller that splits a surface into two halves
  * counts each half by one rule.
  *
+ * Exported for the same reason {@link surfaceChars} is: the on-demand tool
+ * detail route answers the *size of one definition* as a host measurement, and
+ * a reason line that recomputed it would risk a different number than the
+ * budget decision it explains.
+ *
  * @param schema - one schema a session may offer.
  * @returns its character count.
  */
-function schemaChars(schema: ToolSchemaLike): number {
+export function schemaChars(schema: ToolSchemaLike): number {
   return schema.name.length + schema.description.length + serializedLength(schema.parameters)
 }
 

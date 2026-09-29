@@ -17,8 +17,8 @@ theme. Sections 8 and 9 are the map of value sources and the list of what exactl
 
 | Surface | Where it lives | Code | Host seat |
 |---|---|---|---|
-| A. The sidebar tab | the sidebar, `single: true` | `src/client/view.ts` (`ProjectMcpPanel`, `view.ts:1093`) | `betterSidebar.registerTab` (`src/client/index.ts:74-115`), tabId `dsh-project-mcp:servers` (`src/shared.ts:17`), order 55 |
-| A′. The tab's settings drawer | the tab's popover | `src/client/view.ts` (`ProjectMcpSettings`, `view.ts:2441`) | `settings.render` of the tab descriptor (`src/client/index.ts:95-101`) |
+| A. The sidebar tab | DSH's own right sidebar, one page per pane | `src/client/view.ts` (`ProjectMcpPanel`, `view.ts:1093`) | the `sidebarRightTabs` registry plus the keyed `sidebar.right.pane.tab` and `sidebar.right.pane.tab.title` seats (`src/client/sidebar-tab.ts`), type id `dsh-project-mcp:servers` (`src/shared.ts:17`), kind `project-mcp`, guide entry order 55 |
+| A′. The tab's settings popup | opened from one row of the tab chip's actions menu, drawn in the frame's floating layer | `src/client/view.ts` (`ProjectMcpSettings`, `view.ts:2441`) | the `sidebar.right.tab.menu.item` slot, id `dsh-project-mcp:settings`, order 60, plus the `shell.overlay` entry id `dsh-project-mcp:settings-dialog`, order 61 (`src/client/sidebar-tab.ts`) |
 | B. The page in the native settings | a separate settings navigation item | `src/client/settings.ts` (`SettingsPage`, `settings.ts:1996`), `src/client/settings-tools.ts` (`ToolsPage`) | the `settings.section` slot, id `project-mcp`, order 900 (`settings.ts:289-299, 380-395`) |
 | T. Toasts | the frame layer | `src/client/toasts.ts` (`ToastStack`) | the `shell.overlay` slot, id `dsh-project-mcp:toasts`, order 60 (`toasts.ts:41-47`) |
 | C. The Plugins-page config card | the Plugins manager page, the bundle's detail | `src/client/plugin-config.ts` (`PluginConfigCard`, `plugin-config.ts:374`) | the `plugins.bundle.config` slot, key = package name (`registerPluginConfigCard`, `plugin-config.ts:697`), registered only while `configForms.whileServed` serves a namespace (`src/client/index.ts:178-185`) |

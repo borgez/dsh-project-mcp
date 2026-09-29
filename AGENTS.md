@@ -51,7 +51,7 @@ dsh plugin --profile test add link:<workspace>
 
 # 2. every browser-half change: boot the real thing and read the boot page
 pnpm e2e                      # = node scripts/e2e-boot.mjs, profile `test`
-pnpm e2e --profile test-web   # same, plus dsh-better-sidebar (closest to the shipped web profile)
+pnpm e2e --profile test-web   # the same plus the third-party sidebar plugin (coexistence)
 pnpm e2e --url 'http://127.0.0.1:<port>/?token=<token>'   # attach to a server already running
 pnpm e2e --dump-console       # print every console message the page produced
 
@@ -61,7 +61,7 @@ pnpm check && pnpm pack
 
 `scripts/e2e-boot.mjs` starts the profile's web process on a free port, drives headless chromium over CDP, and fails on the boot page, on a console error, or on a page that never mounts. It refuses to run against a profile that pins a packed snapshot instead of `link:<workspace>`, because a tarball cannot see the edit under test.
 
-Two profiles are worth keeping: `test` (in-box bundles plus this plugin) proves the composition with no sidebar, and `test-web` (the same plus `dsh-better-sidebar`) proves the sidebar path where the tab actually registers. Neither is the `web` profile: install there only after both are green, and never as the first place a change is tried.
+Two profiles are worth keeping: `test` (in-box bundles plus this plugin) is a stock `dsh web` composition, which is where the tab and its settings popup are the plugin's own — the browser half speaks to DSH's right sidebar directly and depends on nothing outside the harness. `test-web` adds a third-party sidebar plugin, which is the coexistence case worth proving: it bridges its own tab types into the same native registry, so the two must not fight over a kind or an id. Neither is the `web` profile: install there only after both are green, and never as the first place a change is tried.
 
 Both profiles read the **same** `$DSH_HOME`, so their sessions are the sessions a person's own `dsh web` opens — a `dsh` left running by a captured or interrupted gate holds those sessions and the client answers `session/writer-held` ("This session is already in use…"). All four boot scripts (`e2e-boot.mjs`, `design-parity.mjs`, `design-shot.mjs`, `design-shot-settings.mjs`) therefore arm `scripts/dsh-reaper.mjs`: it kills the server group on `exit`, on `SIGINT`/`SIGTERM`/`SIGHUP` and on an uncaught exception, and sweeps servers left by earlier interrupted runs — same profile flags, `ppid === 1` — before and after every run. A live server of this profile that is *not* an orphan is never touched. If a `dsh --profile … --no-open --port 0` is still alive after a run, that is a bug in the reaper, not a reason to kill it by hand.
 
@@ -90,7 +90,48 @@ cannot (files, entry points, decisions), `todo` meaning *approved and ready*, `b
 Definition of Done before a unit moves to `done`: `pnpm check` green (its coverage thresholds
 included), `pnpm e2e` **and** `pnpm e2e --profile test-web` green for anything touching the
 browser half, the tarball installed into the `web` profile, the `F-NN` row updated, and the
-commit pair (`feat:`/`fix:` then `release:`) in place.
+`feat:`/`fix:` commit pushed to `main` — the `release:` commit that follows it is written by
+`release.yml`, never by hand.
+
+## Releases — a push to `main` is the release
+
+The version is not typed by hand and the `release:` commit is not written by hand.
+`.github/workflows/release.yml` runs on every push to `main` (and on `workflow_dispatch`), and
+when the commits since the last tag ask for a version it writes one:
+
+| commits since the last `v*` tag | level |
+| --- | --- |
+| `feat` | minor |
+| `fix`, `perf`, `revert` | patch |
+| `!` in the header, or a `BREAKING CHANGE:` paragraph | major |
+| `docs`, `chore`, `ci`, `test`, `refactor` alone | nothing — the push releases nothing |
+
+The job runs the full `pnpm check` gate first, then decides with `scripts/next-version.mjs`, which
+bumps the newest of `package.json` and the highest `v*` tag — both are read because they can
+drift, and a tag over a manifest that disagrees with it publishes the wrong number under the right
+name. Before tagging, the job refuses to reuse an existing tag or an already-published npm
+version. It then writes the version into `package.json` (that one line, nothing else), commits it
+as `release: dsh-project-mcp <version>`, tags `v<version>`, creates the GitHub Release, and calls
+`.github/workflows/npm-publish.yml` to publish that tag. The call is explicit because a Release
+created with the workflow's own `GITHUB_TOKEN` starts no other run — the `release:` trigger would
+never fire for it.
+
+Three consequences worth knowing:
+
+- **A green `feat`/`fix` on `main` publishes within the minute.** A change that must not ship
+  yet does not belong on `main`.
+- **The gate runs twice on a releasing push** (in `node.js.yml`, and again in the release job's
+  own tree). The duplication is deliberate: a release must not tag a tree whose gate it never
+  ran, and it must not depend on another workflow's run id to decide.
+- **`pnpm pack` builds by itself** (`prepack`), so a tarball always carries `lib/` and
+  `cordis.patch.yml` — the manifest's own promises, checked inside the tarball before every
+  publish, and by hand in `pnpm pack`.
+
+Publishing by hand stays available as the escape hatch: create a GitHub Release for a tag whose
+`package.json` already carries that version, and `npm-publish.yml` publishes it — failing when
+the two disagree, which is how the `v0.2.1` release once published `0.2.0`. A release that dies
+between its tag and npm is re-driven with `Release` → *Run workflow* (`bump`, `dry_run`), not by
+retagging.
 
 ## Language — docs in English, UI copy in the dictionaries
 

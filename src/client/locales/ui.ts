@@ -138,13 +138,26 @@ export const zh: Record<UiKey, string> = {
   idleDay: '闲置 {count} 天',
   idleHour: '闲置 {count} 小时',
   idleMinute: '闲置 {count} 分钟',
-  // One tool row's detail block: registry name, server, tier.
+  // One tool row's detail block (F-56): the serving server with its state, the
+  // tier as a sentence, the two counter readings, then the host's own answer
+  // about the definition. The name, the clock and the step stay in the header.
   toolServer: '服务器 {server}',
-  toolTierPinned: '已置顶',
-  toolTierSession: '经由：会话',
-  toolTierContext: '经由：上下文',
-  showTool: '显示此工具的注册表名及其提供方式',
-  hideTool: '隐藏此工具的注册表名',
+  toolServerState: '{server} · {state}',
+  toolTierPinned: '已置顶 — 始终在请求中',
+  toolTierSession: '由本次会话提供',
+  toolTierContext: '由上下文排序提供',
+  showTool: '显示此工具的服务器、说明、字段及其提供方式',
+  hideTool: '隐藏此工具的详细信息',
+  toolCallsSession: '本次会话 {count} 次',
+  toolLoading: '正在从宿主读取此定义…',
+  toolFailed: '宿主没有对此定义作答',
+  toolFieldsLabel: '接受',
+  toolFieldRequiredHint: '必填字段',
+  toolReasonBudget: '未提供：{chars} 字符，超出 {budget} 字符的预算',
+  toolReasonChars: '{chars} 字符',
+  toolReasonBudgetOnly: '{budget} 字符的预算',
+  toolReasonUsed: '已提供 {used}',
+  toolReason: '未提供',
   // The errors and logs blocks, under their own disclosures: the event ring is
   // the plugin's own, one project at a time.
   errorsSection: '问题',
@@ -245,9 +258,11 @@ export const zh: Record<UiKey, string> = {
   toastFailed: '{server} 失败',
   toastReleased: '{server} 已释放',
   toastDetail: '{project} · {detail}',
-  // The sidebar plugin toggle: the poll interval's row in the tab's settings.
+  // The poll interval's row in the tab's settings panel.
   refreshTitle: '刷新间隔',
   refreshDesc: '面板重新读取宿主快照的频率',
+  // The tab's actions menu: the row that opens the settings popup.
+  settingsMenuItem: '面板设置…',
   // The design stand's own tab title and description.
   designTitle: '项目 MCP · 设计 ({variant})',
   designDesc: '设计模式：{variant} 夹具，背后没有宿主',
@@ -546,13 +561,26 @@ export const ru: Record<UiKey, string> = {
   idleDay: 'простой {count}д',
   idleHour: 'простой {count}ч',
   idleMinute: 'простой {count}мин',
-  // One tool row's detail block: registry name, server, tier.
+  // One tool row's detail block (F-56): the serving server with its state, the
+  // tier as a sentence, the two counter readings, then the host's own answer
+  // about the definition. The name, the clock and the step stay in the header.
   toolServer: 'сервер {server}',
-  toolTierPinned: 'закреплён',
-  toolTierSession: 'через: сессия',
-  toolTierContext: 'через: контекст',
-  showTool: 'показать имя инструмента в реестре и способ предложения',
-  hideTool: 'скрыть имя инструмента в реестре',
+  toolServerState: '{server} · {state}',
+  toolTierPinned: 'закреплён — всегда в запросе',
+  toolTierSession: 'предложен этой сессией',
+  toolTierContext: 'предложен ранжированием контекста',
+  showTool: 'показать сервер инструмента, описание, поля и способ предложения',
+  hideTool: 'скрыть подробности инструмента',
+  toolCallsSession: '{count} в этой сессии',
+  toolLoading: 'читаем это определение у хоста…',
+  toolFailed: 'хост не ответил на это определение',
+  toolFieldsLabel: 'принимает',
+  toolFieldRequiredHint: 'обязательное поле',
+  toolReasonBudget: 'не предложен: {chars} символов при бюджете {budget}',
+  toolReasonChars: '{chars} символов',
+  toolReasonBudgetOnly: 'бюджет {budget} символов',
+  toolReasonUsed: 'уже предложено {used}',
+  toolReason: 'не предложен',
   // The errors and logs blocks, under their own disclosures.
   errorsSection: 'Проблемы',
   showErrors: 'показать серверы, требующие внимания',
@@ -648,9 +676,11 @@ export const ru: Record<UiKey, string> = {
   toastFailed: '{server}: сбой',
   toastReleased: '{server} освобождён',
   toastDetail: '{project} · {detail}',
-  // The sidebar plugin toggle: the poll interval's row in the tab's settings.
+  // The poll interval's row in the tab's settings panel.
   refreshTitle: 'Интервал обновления',
   refreshDesc: 'Как часто панель перечитывает снимок хоста',
+  // The tab's actions menu: the row that opens the settings popup.
+  settingsMenuItem: 'Настройки панели…',
   // The design stand's own tab title and description.
   designTitle: 'MCP проекта · дизайн ({variant})',
   designDesc: 'режим дизайна: фикстура {variant}, хоста за ней нет',

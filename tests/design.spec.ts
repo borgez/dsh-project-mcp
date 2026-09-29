@@ -16,17 +16,30 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import type { TabDescriptor } from 'dsh-better-sidebar'
 import {
   DESIGN_FLAG_KEY,
   DesignPanel,
   DesignPopup,
   DesignSettingsTab,
+  LocalizedDesignPanel,
+  LocalizedDesignPopup,
   designModeEnabled,
   designVariantOf,
   registerDesignSurfaces,
   registerDesignToasts,
 } from '../src/client/design.ts'
+import {
+  SETTINGS_DIALOG_SLOT,
+  TAB_GUIDE_ORDER,
+  TAB_KIND,
+  TAB_MENU_SLOT,
+  TAB_SLOT,
+  TAB_TITLE_SLOT,
+  TabBody,
+  TabChipTitle,
+  SettingsDialog,
+} from '../src/client/sidebar-tab.ts'
+import type { SidebarRightTabDefinition } from '../src/client/sidebar-tab.ts'
 import {
   DESIGN_DOCUMENT,
   DESIGN_EVENTS,
@@ -119,16 +132,22 @@ function storageOf(value: string | undefined): { getItem(key: string): string | 
   }
 }
 
-/** Read a descriptor label that may be a plain string or a per-render function. */
+/** Read a registered label that may be a plain string or a per-render function. */
 function labelOf(value: string | (() => string) | undefined): string | undefined {
   return typeof value === 'function' ? value() : value
+}
+
+/** Read a tab type's chip title, which the registry writes per opened address. */
+function titleOf(definition: SidebarRightTabDefinition): string {
+  return definition.title('')
 }
 
 /** The options a registration carries, as these checks read them. */
 interface RecordedRegistration {
   name: string
-  id: string
-  order: number
+  id?: string | undefined
+  order?: number | undefined
+  key?: string | undefined
   label?: (() => string) | undefined
 }
 
@@ -138,18 +157,17 @@ function fakeComposition() {
     injects: [] as string[][],
     slotInjects: [] as string[],
     effectLabels: [] as (string | undefined)[],
-    tabs: [] as TabDescriptor[],
+    tabs: [] as SidebarRightTabDefinition[],
     registrations: [] as RecordedRegistration[],
     components: [] as unknown[],
     namespaces: [] as string[],
     dictionaries: [] as { namespace: string; tables: Record<string, Record<string, string>> }[],
   }
-  const betterSidebar = {
-    registerTab: (descriptor: TabDescriptor): (() => void) => {
-      recorded.tabs.push(descriptor)
+  const sidebarRightTabs = {
+    register: (definition: SidebarRightTabDefinition): (() => void) => {
+      recorded.tabs.push(definition)
       return () => undefined
     },
-    getSnapshot: () => ({ prefs: { pluginSettings: {} } }),
   }
   const slots = {
     inject: (slot: string, callback: () => unknown) => {
@@ -171,7 +189,7 @@ function fakeComposition() {
     bind: () => (key: string) => key,
   }
   const scope = {
-    betterSidebar,
+    sidebarRightTabs,
     slots,
     locale: settingsLocale,
     effect: (execute: () => unknown, label?: string) => {
@@ -410,7 +428,7 @@ describe('DesignPanel', () => {
 
 describe('DesignPopup', () => {
   it('names the surface and lists one block per project', () => {
-    const tree = DesignPopup({ variant: 'full', onClose: () => undefined })
+    const tree = DesignPopup({ variant: 'full', refreshMs: 2_000, onClose: () => undefined })
     const read = texts(tree).join(' ')
     expect(read).toContain('Mounted per project')
     expect(read).toContain('1 project(s)')
@@ -423,7 +441,7 @@ describe('DesignPopup', () => {
   })
 
   it('says nothing is mounted when no project resolved', () => {
-    const read = texts(DesignPopup({ variant: 'no-project' })).join(' ')
+    const read = texts(DesignPopup({ variant: 'no-project', refreshMs: 2_000 })).join(' ')
     expect(read).toContain('Nothing is mounted yet.')
     expect(read).toContain('0 project(s)')
   })
@@ -477,8 +495,15 @@ describe('registerDesignSurfaces', () => {
     const { ctx, recorded } = fakeComposition()
     registerDesignSurfaces(ctx, 'full')
 
-    expect(recorded.injects).toEqual([['betterSidebar'], ['slots', 'locale'], ['slots', 'locale']])
-    expect(recorded.slotInjects).toEqual([SETTINGS_SLOT, TOASTS_SLOT])
+    expect(recorded.injects).toEqual([['slots', 'sidebarRightTabs'], ['slots', 'locale'], ['slots', 'locale']])
+    expect(recorded.slotInjects).toEqual([
+      TAB_SLOT,
+      TAB_TITLE_SLOT,
+      TAB_MENU_SLOT,
+      SETTINGS_DIALOG_SLOT,
+      SETTINGS_SLOT,
+      TOASTS_SLOT,
+    ])
     expect(recorded.namespaces).toEqual([NS, NS_HOST])
     // The fixture surfaces register the same one call per namespace with all
     // three languages the product entry does — the design mode is a drop-in
@@ -487,50 +512,80 @@ describe('registerDesignSurfaces', () => {
     for (const dictionary of recorded.dictionaries) {
       expect(Object.keys(dictionary.tables).sort()).toEqual(['en', 'ru', 'zh'])
     }
+    // Four effects in the product (the tab type, `addLanguage`, the two
+    // dictionaries); the stand names no new language, so its three.
     expect(recorded.effectLabels).toEqual([
-      undefined,
+      'dsh-project-mcp: sidebar tab type',
       'dsh-project-mcp: design settings dictionary',
       'dsh-project-mcp: design host dictionary',
     ])
 
     const descriptor = first(recorded.tabs)
     expect(descriptor.id).toBe(TAB_ID)
-    expect(descriptor.single).toBe(true)
-    expect(descriptor.order).toBe(55)
-    expect(labelOf(descriptor.title)).toContain('design (full)')
-    expect(labelOf(descriptor.description)).toContain('full')
+    expect(descriptor.kind).toBe(TAB_KIND)
+    // A page type: it claims no address, so the guide entry is the only way in.
+    expect(first(descriptor.guide ?? []).order).toBe(TAB_GUIDE_ORDER)
+    expect(titleOf(descriptor)).toContain('design (full)')
+    expect(labelOf(first(descriptor.guide ?? []).description)).toContain('full')
 
-    // The tab body and the popover are built from the fixture, through the same
-    // localized wrappers the product entry uses.
-    const panel = descriptor.component as unknown as (props: {
-      scope: { sessionId: string | undefined }
-    }) => unknown
-    const panelElement = panel({ scope: { sessionId: DESIGN_SESSION } }) as Element
+    // The tab body is built from the fixture, through the same localized wrapper
+    // the product entry uses: the registered component is the framework adapter,
+    // which hands the fixture body to the shared `TabBody`.
+    const body = first(recorded.components) as (props: unknown) => unknown
+    const adapter = body({ sessionId: DESIGN_SESSION }) as Element
+    expect(adapter.type).toBe(TabBody)
+    // `TabBody` renders the entry's own body component, which is the stand's
+    // variant-bound wrapper around the fixture panel.
+    const wrapper = (adapter.type as (props: unknown) => unknown)(adapter.props) as Element
+    const panelElement = (wrapper.type as (props: unknown) => unknown)(wrapper.props) as Element
+    expect(panelElement.type).toBe(LocalizedDesignPanel)
     expect(panelElement.props.variant).toBe('full')
     expect(panelElement.props.sessionId).toBe(DESIGN_SESSION)
-    const render = descriptor.settings?.render as unknown as (props: {
-      pluginSettings: Record<string, unknown>
-      updatePluginSetting: (key: string, value: unknown) => void
-      close: () => void
-    }) => unknown
+
+    // The chip title is the stand's own copy, read on every render.
+    const titleEntry = first(recorded.components.slice(1)) as (props: unknown) => unknown
+    const titleElement = titleEntry({}) as Element
+    expect(titleElement.type).toBe(TabChipTitle)
+    expect((titleElement.type as (props: unknown) => unknown)(titleElement.props)).toContain('design (full)')
+
+    // The popup is the same story: the floating layer's entry draws the shared
+    // `SettingsDialog`, which is handed the fixture's own content.
+    const dialogEntry = first(recorded.components.slice(3)) as (props: unknown) => unknown
+    const dialogElement = dialogEntry({}) as Element
+    expect(dialogElement.type).toBe(SettingsDialog)
+    const render = dialogElement.props.settings as (props: unknown) => unknown
     const popupElement = render({
-      pluginSettings: {},
-      updatePluginSetting: () => undefined,
-      close: () => undefined,
+      refreshMs: 2_000,
+      onRefreshMs: () => undefined,
+      onClose: () => undefined,
+      t: undefined,
+      hostT: undefined,
     }) as Element
+    expect(popupElement.type).toBe(LocalizedDesignPopup)
     expect(popupElement.props.variant).toBe('full')
     expect(typeof popupElement.props.onClose).toBe('function')
 
-    // The settings slot got the fixture page, not the polling one.
-    const settings = first(recorded.components) as (props: { t?: unknown }) => unknown
+    // The settings slot got the fixture page, not the polling one. The slot
+    // components are read by the name they registered under, because the sidebar
+    // seats fill the front of the list.
+    const settings = recorded.components[
+      recorded.registrations.findIndex((entry) => entry.name === SETTINGS_SLOT)
+    ] as (props: { t?: unknown }) => unknown
     const settingsElement = settings({}) as Element
     expect(settingsElement.type).toBe(DesignSettingsTab)
     const page = (settingsElement.type as (props: unknown) => unknown)(settingsElement.props) as Element
     expect(page.type).toBe(SettingsPage)
     expect((page.props.snapshot as { projects: unknown[] }).projects).toHaveLength(1)
 
-    expect(recorded.registrations[0]).toMatchObject({ name: SETTINGS_SLOT, id: 'dsh-project-mcp' })
-    expect(recorded.registrations[1]).toMatchObject({ name: TOASTS_SLOT, id: TOASTS_ID, order: TOASTS_ORDER })
+    expect(recorded.registrations.find((entry) => entry.name === SETTINGS_SLOT)).toMatchObject({
+      id: 'dsh-project-mcp',
+    })
+    // By id, not by slot: the popup and the stack share `shell.overlay`.
+    expect(recorded.registrations.find((entry) => entry.id === TOASTS_ID)).toMatchObject({
+      name: TOASTS_SLOT,
+      order: TOASTS_ORDER,
+    })
+    expect(recorded.registrations.find((entry) => entry.name === TAB_SLOT)).toMatchObject({ key: TAB_ID })
   })
 
   it('reads the picture off storage when none is passed', () => {
@@ -538,7 +593,7 @@ describe('registerDesignSurfaces', () => {
     try {
       const { ctx, recorded } = fakeComposition()
       registerDesignSurfaces(ctx)
-      expect(labelOf(first(recorded.tabs).title)).toContain('design (quiet)')
+      expect(titleOf(first(recorded.tabs))).toContain('design (quiet)')
     } finally {
       restore()
     }
@@ -610,7 +665,7 @@ describe('apply in design mode', () => {
     try {
       const design = fakeComposition()
       apply(design.ctx)
-      expect(labelOf(first(design.recorded.tabs).title)).toContain('design (full)')
+      expect(titleOf(first(design.recorded.tabs))).toContain('design (full)')
       // The product path registers its own page; the fixture path must not.
       expect(first(design.recorded.components)).not.toBe(SettingsPage)
     } finally {
@@ -621,7 +676,7 @@ describe('apply in design mode', () => {
     apply(product.ctx)
     const descriptor = first(product.recorded.tabs)
     // The real descriptor's title is the localized tab label, not a fixture name.
-    expect(labelOf(descriptor.title)).not.toContain('design')
+    expect(titleOf(descriptor)).not.toContain('design')
     expect(descriptor.id).toBe(TAB_ID)
   })
 
@@ -630,7 +685,7 @@ describe('apply in design mode', () => {
     try {
       const composition = fakeComposition()
       apply(composition.ctx)
-      expect(labelOf(first(composition.recorded.tabs).title)).not.toContain('design')
+      expect(titleOf(first(composition.recorded.tabs))).not.toContain('design')
     } finally {
       restore()
     }

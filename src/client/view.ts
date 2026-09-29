@@ -2,16 +2,16 @@
  * Browser half of the panel: the tab shows one surface for the project of the
  * session it is open in — the session's declared servers, the sessions that read
  * differently from the project, what the model sees, and the problems and the
- * event ring under their own disclosures — while the side card settings popup
- * keeps the whole picture across every project with a live session. The native
- * Settings page
- * (`settings.section`, see `./settings.ts`) is the third surface and shares
- * this module's fetch/poll path, status colours and storage helpers.
+ * event ring under their own disclosures — while the settings popup, opened from
+ * the tab's actions menu, keeps the whole picture across every project with a
+ * live session. The native Settings page (`settings.section`, see
+ * `./settings.ts`) is the third surface and shares this module's fetch/poll path,
+ * status colours and storage helpers.
  *
- * Data comes from the host over `/project-mcp/*` (see `src/ui.ts`):
- * `ctx.betterSidebar` exists only in the browser half, so there is nothing to
- * call in process. The host half's types are imported type-only, which the
- * bundler erases — the client bundle stays free of host code.
+ * Data comes from the host over `/project-mcp/*` (see `src/ui.ts`): the browser
+ * half has nothing to call in process. The host half's types are imported
+ * type-only, which the bundler erases — the client bundle stays free of host
+ * code.
  *
  * @module dsh-project-mcp/client/view
  */
@@ -19,7 +19,7 @@
 import { createElement as h, useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { ROUTE_ACTIONS, ROUTE_PREFIX, TAB_ID } from '../shared.ts'
-import type { LogEvent, McpSnapshot, ProjectSnapshot, ServerRow, ServerStatus, SessionTools, SnapshotChange, ToolMode, ToolPolicy } from '../types.ts'
+import type { LogEvent, McpSnapshot, ProjectSnapshot, ServerRow, ServerStatus, SessionTools, SnapshotChange, ToolFacts, ToolField, ToolMode, ToolPolicy, ToolReason } from '../types.ts'
 import { hostTranslate, resolveHost } from './locales/host.ts'
 import { operatorBody, pinBody, policyOf } from './policy.ts'
 import { MCP_TOOL_PREFIX, idleOf, serverOfToolName, toolCalls } from './usage-view.ts'
@@ -124,16 +124,31 @@ export const en = {
   idleDay: 'idle {count}d',
   idleHour: 'idle {count}h',
   idleMinute: 'idle {count}m',
-  // One tool row's detail block: the registry name it carries, the server the
-  // name was registered under, and the tier that offered it. The host publishes
-  // no size for a single tool, so the budget estimate stays in the group line
-  // above — nothing here is derived from it.
+  // One tool row's detail block (F-56): the server the name was registered
+  // under with the state it is in, the tier said as a sentence, the two counter
+  // readings apart, and then what only the host can answer — the definition's
+  // own description, its fields, and why a hidden name is not in the request.
+  // The name, the clock and the step stay in the header; a body that repeated
+  // them was the copy this unit removed. The host publishes no size for a single
+  // tool, so the budget estimate stays in the group line above — the only figure
+  // the reason line prints is a measurement the host sent it.
   toolServer: 'server {server}',
-  toolTierPinned: 'pinned',
-  toolTierSession: 'via: session',
-  toolTierContext: 'via: context',
-  showTool: 'show this tool’s registry name and how it was offered',
-  hideTool: 'hide this tool’s registry name',
+  toolServerState: '{server} · {state}',
+  toolTierPinned: 'pinned — always in the request',
+  toolTierSession: 'offered by this session',
+  toolTierContext: 'offered by the context ranking',
+  showTool: 'show this tool’s server, description, fields and how it was offered',
+  hideTool: 'hide this tool’s detail',
+  toolCallsSession: '{count} this session',
+  toolLoading: 'reading this definition from the host…',
+  toolFailed: 'the host did not answer for this definition',
+  toolFieldsLabel: 'takes',
+  toolFieldRequiredHint: 'required field',
+  toolReasonBudget: 'not offered: {chars} chars over the {budget}-char budget',
+  toolReasonChars: '{chars} chars',
+  toolReasonBudgetOnly: '{budget}-char budget',
+  toolReasonUsed: '{used} already offered',
+  toolReason: 'not offered',
   // The errors and logs blocks, under their own disclosures: the event ring is
   // the plugin's own, one project at a time.
   errorsSection: 'Problems',
@@ -241,10 +256,13 @@ export const en = {
   toastFailed: '{server} failed',
   toastReleased: '{server} released',
   toastDetail: '{project} · {detail}',
-  // The sidebar plugin toggle: the poll interval's row in the tab's settings,
-  // read live through the seat on every render.
+  // The poll interval's row in the settings panel, read live through the seat
+  // on every render.
   refreshTitle: 'Refresh interval',
   refreshDesc: 'How often the panel re-reads the host snapshot',
+  // The tab's actions menu (the chip's own menu): the row that opens the
+  // settings popup, which used to be the sidebar's side card.
+  settingsMenuItem: 'Panel settings…',
   // The design stand's own tab title and description (design.ts).
   designTitle: 'Project MCP · design ({variant})',
   designDesc: 'design mode: the {variant} fixture, no host behind it',
@@ -276,8 +294,19 @@ export function fallbackTranslate(key: string, params?: Record<string, unknown>)
   )
 }
 
-/** Setting key of the poll interval, persisted in `prefs.pluginSettings[TAB_ID]`. */
+/** Name of the poll interval inside {@link REFRESH_STORAGE_KEY}. */
 export const REFRESH_KEY = 'refreshMs'
+
+/**
+ * `localStorage` key the poll interval is persisted under.
+ *
+ * The interval used to ride the side card's own settings blob
+ * (`prefs.pluginSettings[TAB_ID]` of `dsh-better-sidebar`). That surface is gone
+ * with the dependency, so the interval is a browser-local preference beside the
+ * view, the log filters and the Clear mark — same lifetime, same hostile-storage
+ * rule, one less service to read it from.
+ */
+export const REFRESH_STORAGE_KEY = `${TAB_ID}:${REFRESH_KEY}`
 
 /** Poll interval used until the setting is read. */
 export const DEFAULT_REFRESH_MS = 5_000
@@ -558,6 +587,30 @@ export const STYLE = {
   } satisfies CSSProperties,
   error: { padding: 8, color: STATUS_COLOR.error } satisfies CSSProperties,
   /**
+   * The poll interval's row in the settings panel: a label that stacks the
+   * toggle's own title and hint, the field it points at, and the unit beside it.
+   * Laid out as one row so the panel reads like the side card the row came from.
+   */
+  settingRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 8px 0',
+  } satisfies CSSProperties,
+  settingLabel: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1 } satisfies CSSProperties,
+  settingTitle: { fontSize: 12 } satisfies CSSProperties,
+  settingDesc: { fontSize: 11, color: TONE.tertiary } satisfies CSSProperties,
+  settingInput: {
+    width: 72,
+    padding: '2px 6px',
+    borderRadius: 4,
+    border: BORDER,
+    background: 'transparent',
+    color: 'inherit',
+    font: 'inherit',
+  } satisfies CSSProperties,
+  settingUnit: { fontSize: 11, color: TONE.tertiary } satisfies CSSProperties,
+  /**
    * One disclosure of the single surface (F-26): a block of the scrolling body
    * whose head is a button and whose body exists only while it is open. The
    * parity gate finds it as a `div` with a `button[aria-expanded]` child, so the
@@ -610,14 +663,30 @@ export const STYLE = {
     textAlign: 'left',
   } satisfies CSSProperties,
   /**
-   * The open detail of one tool: its full public name in mono, then the server,
-   * the tier, and the step and time only while the host published them. One rung
-   * in from the row, like every other body of a disclosure.
+   * The open detail of one tool (F-56): the server it was registered under with
+   * the state it is in, the tier as a sentence, the counter readings this row does
+   * not show, and then the host's own on-demand answer about the definition — its
+   * description, the fields it takes, and why a hidden name is not in the request.
+   * One rung in from the row, like every other body of a disclosure.
    */
   toolDetail: {
     flexBasis: '100%',
     padding: '2px 0 4px 12px',
   } satisfies CSSProperties,
+  /** One accepted field of a definition: its mono name, type, marker and description. */
+  field: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    gap: 5,
+    padding: '1px 0',
+    overflowWrap: 'anywhere',
+  } satisfies CSSProperties,
+  fieldName: {
+    fontFamily: 'var(--dsw-font-mono, ui-monospace, monospace)',
+    overflowWrap: 'anywhere',
+  } satisfies CSSProperties,
+  fieldDesc: { color: TONE.secondary, opacity: 0.75 } satisfies CSSProperties,
   group: {
     opacity: 0.6,
     fontSize: '0.8em',
@@ -1010,6 +1079,77 @@ export function storeString(
 }
 
 /**
+ * Read the poll interval out of browser-local storage.
+ *
+ * A missing, unreadable or nonsensical value is not an error: the panel falls
+ * back to {@link DEFAULT_REFRESH_MS}, exactly as it did when the value arrived
+ * in an untyped plugin-settings blob.
+ * @param storage - storage to read; defaults to the browser's own.
+ * @returns the stored interval in milliseconds, or the default.
+ */
+export function storedRefreshMs(storage: PanelStorage | undefined = browserStorage()): number {
+  const raw = storedString(REFRESH_STORAGE_KEY, storage)
+  if (raw === undefined) return DEFAULT_REFRESH_MS
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_REFRESH_MS
+}
+
+/**
+ * The poll interval as a live preference.
+ *
+ * Two surfaces read it — the panel it paces and the settings that change it —
+ * and they are not in one tree (the settings live in the tab's actions menu), so
+ * the value needs a seat both can subscribe to. The store is the same shape the
+ * toast stack uses: a value, a setter, and listeners for whoever renders it.
+ * Writes go to browser storage first, so a reload keeps the interval even when
+ * no surface is left to re-render.
+ */
+export interface RefreshStore {
+  /** The current interval in milliseconds. */
+  get(): number
+  /** Persist and publish a new interval; a value the surface cannot render is the caller's business. */
+  set(value: number): void
+  /** Subscribe to changes; the returned function unsubscribes. */
+  subscribe(listener: () => void): () => void
+}
+
+/**
+ * Build a {@link RefreshStore} on top of browser storage.
+ * @param storage - storage to read and write; defaults to the browser's own.
+ * @returns the store, seeded from what is already persisted.
+ */
+export function createRefreshStore(
+  storage: PanelStorage | undefined = browserStorage(),
+): RefreshStore {
+  let value = storedRefreshMs(storage)
+  const listeners = new Set<() => void>()
+  return {
+    get: () => value,
+    set: (next: number): void => {
+      if (!Number.isFinite(next) || next <= 0 || next === value) return
+      value = next
+      storeString(REFRESH_STORAGE_KEY, String(next), storage)
+      for (const listener of listeners) listener()
+    },
+    subscribe: (listener: () => void): (() => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
+/**
+ * Read the store as a re-rendering hook.
+ * @param store - the store to follow.
+ * @returns the current interval, re-read after every change.
+ */
+export function useRefreshMs(store: RefreshStore): number {
+  const [value, setValue] = useState(() => store.get())
+  useEffect(() => store.subscribe(() => setValue(store.get())), [store])
+  return value
+}
+
+/**
  * Which sessions the Logs tab reads: the tab's own session, or every session of
  * the project. The mockup offers exactly these two.
  */
@@ -1165,6 +1305,146 @@ export async function fetchLogs(
   } catch {
     return undefined
   }
+}
+
+/**
+ * What one opened row's definition costs to answer, and what is already known
+ * about it: the one place a `GET tool` answer is held (F-56).
+ *
+ * One cache for the module, keyed by the route's own three parameters, rather
+ * than one per mount. The answer is a fact about the name, not about a render —
+ * folding a row and opening it again must not re-read the host, and the design
+ * stand seeds this map directly instead of mounting a host to fake one. The key
+ * carries the project and the session because the route takes them and two
+ * surfaces of the panel may read different ones in one process.
+ *
+ * An entry is written **only** by answers that arrived: a fetch in flight is in
+ * {@link toolFactsPending} and a failed one in {@link toolFactsFailed}, so a
+ * mount that skipped the tool routes pulls in no fixture code and draws no
+ * invented answer.
+ */
+interface ToolFactsEntry {
+  readonly projectRoot: string
+  readonly sessionId: string
+  readonly name: string
+}
+
+const TOOL_FACTS_SEPARATOR = '\u0000'
+const toolFacts = new Map<string, ToolFacts>()
+const toolFactsPending = new Set<string>()
+const toolFactsFailed = new Set<string>()
+
+/** The cache key of one `GET tool` answer. */
+function toolFactsKey(projectRoot: string, sessionId: string, name: string): string {
+  return [projectRoot, sessionId, name].join(TOOL_FACTS_SEPARATOR)
+}
+
+/** Build the `GET tool` query for one opened row's definition. */
+function toolFactsQuery(projectRoot: string, sessionId: string, name: string): URLSearchParams {
+  return new URLSearchParams({ projectRoot, sessionId, name })
+}
+
+/**
+ * Read one tool's facts over the contract's `GET tool` route.
+ *
+ * The snapshot carries no definition, and cannot: a description and a schema are
+ * the expensive part of a tool, while every change frame and every poll carries
+ * the whole snapshot. This route is therefore read once per row the reader
+ * opens, exactly as `GET logs` is read once per page — and it answers a
+ * **deferred** name the same way as an offered one, because the definition is
+ * read from the scope the bridge registered it in and not from the offer.
+ * Unknown names answer `ok: false` and are indistinguishable here from a refusal,
+ * which is the route's own decision: the panel draws its one failure line.
+ * @param projectRoot - project the definition belongs to.
+ * @param sessionId - session the row is open in; the host scopes the read to it.
+ * @param name - public registry name, eg `mcp__tglider__workspace`.
+ * @param fetchImpl - `fetch` to use; defaults to the browser's.
+ * @returns the facts, or `undefined` when the host refused or the answer was unreadable.
+ */
+export async function fetchToolFacts(
+  projectRoot: string,
+  sessionId: string,
+  name: string,
+  fetchImpl: typeof fetch | undefined = (globalThis as { fetch?: typeof fetch }).fetch,
+): Promise<ToolFacts | undefined> {
+  if (fetchImpl === undefined) return undefined
+  // Read out of the shared registry like `logs`, so a build whose contract has
+  // no `tool` action asks for nothing rather than for a route nobody serves.
+  const action = (ROUTE_ACTIONS as Record<string, string | undefined>).tool
+  if (action === undefined) return undefined
+  try {
+    const query = toolFactsQuery(projectRoot, sessionId, name)
+    const response = await fetchImpl(`${ROUTE_PREFIX}/${action}?${query.toString()}`)
+    const payload = (await response.json()) as Envelope<ToolFacts>
+    if (payload.ok !== true || payload.value === undefined) return undefined
+    return payload.value
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The facts known about one name, asked for at most once per route.
+ *
+ * Called from the render of a row that is open — the only moment the answer is
+ * wanted — so a folded row costs nothing. A synchronous answer already in the
+ * map is returned now; otherwise the read starts once and the caller draws
+ * {@link toolFactsLoading}'s line until the promise settles and re-renders. The
+ * name-only entry is read first because that is where a seeded stand writes, and
+ * a definition is the same record whichever panel asked for it.
+ * @param entry - the route's own parameters.
+ * @returns the facts while they are held; `undefined` while the read is on its way.
+ */
+function toolFactsOf(entry: ToolFactsEntry): ToolFacts | undefined {
+  const seeded = toolFacts.get(entry.name)
+  if (seeded !== undefined) return seeded
+  const key = toolFactsKey(entry.projectRoot, entry.sessionId, entry.name)
+  const held = toolFacts.get(key)
+  if (held !== undefined || toolFactsPending.has(key) || toolFactsFailed.has(key)) return held
+  toolFactsPending.add(key)
+  void fetchToolFacts(entry.projectRoot, entry.sessionId, entry.name).then((facts) => {
+    toolFactsPending.delete(key)
+    if (facts === undefined) toolFactsFailed.add(key)
+    else toolFacts.set(key, facts)
+  })
+  return undefined
+}
+
+/** `true` once the host refused to answer for this name. */
+function toolFactsUnreadable(entry: ToolFactsEntry): boolean {
+  return toolFactsFailed.has(toolFactsKey(entry.projectRoot, entry.sessionId, entry.name))
+}
+
+/**
+ * Publish one definition into the panel's cache, as the design mode's own host
+ * would answer.
+ *
+ * The stand renders the same components with no host at all, so the body of an
+ * opened row would sit on a read that never resolves. Seeding the very map the
+ * product reads — rather than a second "fixture mode" branch inside the row —
+ * is what keeps the product's drawing and the stand's one drawing: `view.ts`
+ * has no code path that knows whether the answer came from a socket. The entry is
+ * written under the name alone, which is the key a row with no route of its own
+ * looks up; a panel that does hold one looks there first, for the same reason.
+ * @param name - the public registry name the record answers about.
+ * @param facts - the record the fixture host publishes for that name.
+ */
+export function seedToolFacts(name: string, facts: ToolFacts): void {
+  toolFacts.set(name, facts)
+}
+
+/**
+ * Forget every held definition.
+ *
+ * Exported for the specs: one process renders several panels for several
+ * projects, and an answer held for one of them must not decide another's body.
+ * The product never calls this — a definition does not change while a panel is
+ * mounted.
+ */
+export function clearToolFacts(): void {
+  toolFacts.clear()
+  toolFactsPending.clear()
+  toolFactsFailed.clear()
 }
 
 /**
@@ -2271,12 +2551,17 @@ export function budgetLine(tools: SessionTools, t: Translate): ReactNode {
 }
 
 /**
- * What one tool row's detail block is opened with (F-26).
+ * What one tool row's detail block is opened with (F-26, F-56).
  *
  * The block prints only what the host published about this one name. `SessionTools`
  * measures the whole set (`surfaceChars` / `visibleChars` / `deferredChars`), not
  * a single tool, so there is no per-tool size here to print and none is derived:
  * the group's own budget line is where an estimate is real.
+ *
+ * What F-56 removed from the block is what the header already carries: the
+ * registry name, the clock and the step. The tier stays here, but as the one
+ * thing the header's dot cannot say while nobody hovers — and it reads as a
+ * sentence rather than as the wire word.
  */
 export interface ToolDetail {
   /** Tier that offered the name: the pin list, this session, or context ranking. */
@@ -2289,35 +2574,260 @@ export interface ToolDetail {
   open: boolean
   /** Toggle this row's detail block. */
   onToggle: () => void
+  /**
+   * The session's own declared rows, read for the serving server's state — the
+   * same {@link ServerRow} the block above draws. Absent on a surface that has no
+   * servers to hand down (a unit test of the row, the design stand's own rows),
+   * and then the state is simply not printed: the panel never guesses a status.
+   */
+  rows?: readonly ServerRow[] | undefined
+  /**
+   * Both counter readings the row's header was seeded with, so the block can
+   * print the two of them apart: the header keeps the lead figure
+   * ({@link callsLabel}'s choice) and the body adds the reading the header had no
+   * room for. Absent where the host published no record for the row's server.
+   */
+  calls?: ToolCalls | undefined
+  /**
+   * Project the definition belongs to — the route's own first parameter.
+   *
+   * Absent together with {@link ToolDetail.sessionId} on a surface that is not
+   * reading a host at all (the design stand's fixtures are seeded straight into
+   * the cache, and a unit test of the row composes it without a route): the body
+   * then draws no line rather than asking an address it was never given.
+   */
+  projectRoot?: string | undefined
+  /** Session the row is open in — the route's own second parameter. */
+  sessionId?: string | undefined
 }
 
 /**
- * The fact line of one tool's detail block.
+ * The state of the server one registry name was registered under, as the row's
+ * own block prints it.
  *
- * The server comes out of the registry name the host publishes, and the step and
- * the time appear only while the host published them: no number, no line —
- * an invented `step 4` is exactly what contract C2 exists to prevent. A name
- * that does not carry the `mcp__` prefix has no server to name, and then no
- * server is printed rather than a guessed one.
+ * The rows handed down are the session's declared ones — `sessionRowsOf`'s list
+ * — so a name whose server the host never declared gets no status, and neither
+ * does a name without the `mcp__` prefix. "The server is not in the list" and
+ * "the server is idle" are different facts, and only the second is printable.
  * @param name - the registry name on the row.
- * @param detail - the tier and the host's own step and time, when it gave them.
+ * @param rows - the session's declared rows; absent draws no state at all.
  * @param t - translate seat.
- * @returns the facts to join into one line, in the contract's order.
+ * @returns the sentence, or `undefined` when there is no server row to read.
  */
-export function toolDetailFacts(name: string, detail: ToolDetail, t: Translate): string[] {
+export function toolServerState(
+  name: string,
+  rows: readonly ServerRow[] | undefined,
+  t: Translate,
+): string | undefined {
   const server = serverOfToolName(name)
-  const tier =
-    detail.via === 'pin'
-      ? t('toolTierPinned')
-      : detail.via === 'session'
-        ? t('toolTierSession')
-        : t('toolTierContext')
+  if (server === undefined) return undefined
+  const row = (rows ?? []).find((entry) => entry.name === server)
+  if (row === undefined) return undefined
+  return t('toolServerState', { server, state: t(STATUS_KEYS[row.status]) })
+}
+
+/** The tier one row was offered by, said as a sentence (F-56). */
+export function toolTierSentence(via: ToolDetail['via'], t: Translate): string {
+  return via === 'pin'
+    ? t('toolTierPinned')
+    : via === 'session'
+      ? t('toolTierSession')
+      : t('toolTierContext')
+}
+
+/**
+ * The two counter readings of one row's block (F-56), one line, each figure
+ * labelled by what it counts.
+ *
+ * The block no longer repeats what the header shows — the header keeps the lead
+ * figure, `callsLabel`'s own choice — so the project's total comes back only when
+ * the host published it, and the session's own only when the session's slice
+ * exists. A server the host never recorded draws nothing at all: this is the same
+ * "no data, no label" rule the row obeys, one level down.
+ * @param calls - the two readings, absent when the host published no record.
+ * @param t - translate seat.
+ * @returns the line, or `undefined` when there is no figure to print.
+ */
+export function toolCallsLine(calls: ToolCalls | undefined, t: Translate): string | undefined {
+  if (calls === undefined || !calls.recorded) return undefined
+  const project = calls.project
+  const session = calls.session
+  const parts = [
+    project === undefined ? undefined : t('callsProject', { count: project }),
+    session === undefined ? undefined : t('toolCallsSession', { count: session }),
+  ].filter((part): part is string => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join(' · ')
+}
+
+/**
+ * Why one name is not in this session's request, in the host's own figures
+ * (F-56).
+ *
+ * Every number here arrived in `ToolFacts.reason`; a figure the host did not
+ * measure leaves its phrase out rather than printing a zero, which is the same
+ * discipline as contract C2's step tag. The whole sentence uses the complete
+ * template while all three figures are there, so a reader of any language gets
+ * its own grammar; a shorter answer falls back to the phrases that did arrive.
+ * @param reason - the host's reason, or `undefined` for an offered name.
+ * @param t - translate seat.
+ * @returns the sentence, or `undefined` when there is nothing to print.
+ */
+export function toolReasonLine(reason: ToolReason | undefined, t: Translate): string | undefined {
+  if (reason === undefined) return undefined
+  const { chars, budget, used } = reason
+  if (chars !== undefined && budget !== undefined && used !== undefined) {
+    return t('toolReasonBudget', { chars, budget, used })
+  }
   return [
-    server === undefined ? undefined : t('toolServer', { server }),
-    tier,
-    detail.step === undefined ? undefined : t('toolsStep', { step: detail.step }),
-    detail.at === undefined ? undefined : toolTime(detail.at),
-  ].filter((fact): fact is string => fact !== undefined)
+    chars === undefined ? undefined : t('toolReasonChars', { chars }),
+    budget === undefined ? undefined : t('toolReasonBudgetOnly', { budget }),
+    used === undefined ? undefined : t('toolReasonUsed', { used }),
+  ].filter((part): part is string => part !== undefined)
+    .join(', ') || t('toolReason')
+}
+
+/**
+ * The view model one opened row's body is drawn from.
+ *
+ * `loading` is the state of a read that has started and not landed, and it is
+ * drawn as its own muted line rather than as an empty body: the answer is on its
+ * way, and a block that drew nothing would read as "there is nothing to say".
+ * `failure` is the host's refusal — an unknown name, or an older host without the
+ * route — and it is drawn as a muted line too. Neither state invents a fact.
+ */
+export interface ToolFactsView {
+  readonly state: 'loading' | 'failure' | 'facts'
+  readonly facts?: ToolFacts | undefined
+}
+
+/**
+ * What one opened row currently knows, read from the module's own cache.
+ *
+ * This is the **only** place the row's body asks for the definition: one call per
+ * open row, from the row's own render, so a folded row costs nothing and a
+ * refolded one is answered from {@link toolFacts}. A row with no route to ask —
+ * the stand's seeded rows carry one, a unit test's may not — still reads the
+ * cache, so a seeded answer is answered synchronously and an unseeded one draws
+ * the loading line instead of contacting an address nobody gave.
+ * @param name - the registry name on the row.
+ * @param detail - the row's disclosure state and the session's own rows.
+ * @returns the view model for the body; `loading` while the read is in flight.
+ */
+export function toolFactsView(name: string, detail: ToolDetail): ToolFactsView {
+  const { projectRoot, sessionId } = detail
+  // No route to ask: read what the cache already holds and start nothing. This
+  // is the design stand's and a unit test's own path — a seeded answer is drawn,
+  // an unseeded one waits, and neither opens a connection nobody asked for.
+  if (projectRoot === undefined || sessionId === undefined) {
+    // With no route in hand the panel reads the cache the way the seeded stand
+    // does: a name is looked up as itself, so "no route" costs a definition
+    // nothing rather than hiding it behind parameters nobody has.
+    const failed = toolFactsFailed.has(name)
+    const held = failed ? undefined : toolFacts.get(name)
+    if (held !== undefined) return { state: 'facts', facts: held }
+    return failed ? { state: 'failure' } : { state: 'loading' }
+  }
+  const entry: ToolFactsEntry = { projectRoot, sessionId, name }
+  const held = toolFactsOf(entry)
+  if (held !== undefined) return { state: 'facts', facts: held }
+  return toolFactsUnreadable(entry) ? { state: 'failure' } : { state: 'loading' }
+}
+
+/** One accepted field, as the block lists it: mono name, type, marker, description. */
+function fieldLine(field: ToolField, index: number, t: Translate): ReactNode {
+  return h(
+    'div',
+    { key: `${field.name}-${String(index)}`, style: STYLE.field },
+    // The marker rides with the type rather than with the name: `name*` reads as
+    // part of the identifier, and a `*` the schema did not mean would be a
+    // requirement the tool never declared.
+    h('span', { style: STYLE.fieldName }, field.name),
+    h('span', { style: STYLE.muted }, field.type),
+    field.required ? h('span', { title: t('toolFieldRequiredHint') }, '*') : null,
+    field.description === undefined
+      ? null
+      : h('span', { style: STYLE.fieldDesc }, `— ${field.description}`),
+  )
+}
+
+/**
+ * The body of one opened tool row: the facts the header does not hold.
+ *
+ * The header already carries the registry name, the clock and the step, so this
+ * block carries what it cannot: the server and the state it is in, the tier as a
+ * sentence, the two counter readings, and then the host's own answer about the
+ * definition — its model-facing description verbatim, the fields it accepts, and
+ * the reason a hidden name is not in the request. Empty groups are not printed,
+ * which is this file's rule everywhere: no fields, no field list.
+ *
+ * The reason leads the block for a **hidden** row: there, it is the answer to the
+ * question the reader opened the row with, while for an offered name the same
+ * block is a definition rather than an apology.
+ * @param name - the registry name on the row.
+ * @param detail - the tier, the disclosure state and the session's own rows.
+ * @param view - what the cache holds for this name right now.
+ * @param t - translate seat.
+ * @returns the body's lines, in order.
+ */
+export function toolFactsBody(
+  name: string,
+  detail: ToolDetail,
+  view: ToolFactsView,
+  t: Translate,
+): ReactNode {
+  if (view.state === 'loading') return h('div', { style: STYLE.dim }, t('toolLoading'))
+  if (view.state === 'failure') return h('div', { style: STYLE.dim }, t('toolFailed'))
+  const facts = view.facts
+  if (facts === undefined) return null
+  const reason = toolReasonLine(toolReasonOf(name, facts), t)
+  const reasonLine = reason === undefined ? null : h('div', { style: STYLE.muted }, reason)
+  const description =
+    facts.description === undefined
+      ? null
+      : // The host's own model-facing text, exactly as it arrived: not
+        // translated, not shortened, and not passed through a dictionary.
+        h('div', { style: STYLE.detail }, facts.description)
+  const title = facts.description === undefined ? name : `${name} — ${facts.description}`
+  const fields =
+    facts.fields.length === 0
+      ? null
+      : [
+          h('div', { key: 'fields', style: STYLE.group }, t('toolFieldsLabel')),
+          ...facts.fields.map((field, index) => fieldLine(field, index, t)),
+        ]
+  const server = toolServerState(name, detail.rows, t)
+  const calls = toolCallsLine(detail.calls, t)
+  // Every group is drawn only while it has something to say: a fact the host did
+  // not publish gets no line at all, not an empty one.
+  const lines: ReactNode[] = [
+    ...(server === undefined ? [] : [h('div', { key: 'server', style: STYLE.muted }, server)]),
+    ...(calls === undefined ? [] : [h('div', { key: 'calls', style: STYLE.muted }, calls)]),
+  ]
+  return [
+    // The reason leads a hidden row's body: there it is the answer to the
+    // question the reader opened the row with, while for an offered name the same
+    // block is a definition rather than an apology.
+    ...(detail.via === 'pin' ? [reasonLine] : []),
+    h('div', { key: 'tier', style: STYLE.muted }, toolTierSentence(detail.via, t)),
+    ...lines,
+    description,
+    ...(detail.via === 'pin' ? [] : [reasonLine]),
+    fields,
+  ].filter((line): line is Exclude<ReactNode, null> => line !== null)
+}
+
+/**
+ * The host's reason for one name, read from the record the row is holding.
+ *
+ * A record whose `name` is not the row's own is a host bug, and the panel draws
+ * no reason rather than another tool's: the fact belongs to the definition the
+ * body was asked about.
+ * @param name - the registry name on the row.
+ * @param facts - the record the cache holds.
+ * @returns the reason, or `undefined` for an offered name.
+ */
+function toolReasonOf(name: string, facts: ToolFacts): ToolReason | undefined {
+  return facts.name === name ? facts.reason : undefined
 }
 
 /**
@@ -2345,6 +2855,11 @@ export function toolRow(
 ): ReactNode {
   const open = detail.open
   const calls = callsLabel(row.calls, t)
+  // Read once, and only while this row is the open one (F-56): the host route
+  // answers one definition at a time, and a folded row asks for nothing.
+  const facts = open
+    ? toolFactsBody(row.name, { ...detail, calls: row.calls }, toolFactsView(row.name, detail), t)
+    : null
   return h(
     'div',
     { key: row.name, style: STYLE.tool },
@@ -2378,10 +2893,12 @@ export function toolRow(
       ? h(
           'div',
           { style: STYLE.toolDetail },
-          // The full public name the host published, in mono — the same string the
-          // header shows, spelled out where there is room for it.
-          h('div', { style: STYLE.name }, row.name),
-          h('div', { style: STYLE.detail }, toolDetailFacts(row.name, detail, t).join(' · ')),
+          // What the header cannot hold (F-56). The name, the clock and the step
+          // are **not** repeated here — the header is where the reader already
+          // read them, and printing them twice was the copy this unit removed.
+          // Everything below the tier is the host's own answer, read once, on
+          // demand, while this row is the one that is open.
+          facts,
         )
       : null,
   )
@@ -2518,6 +3035,25 @@ export function HiddenTier(props: {
   pins?: readonly string[] | undefined
   /** `true` while a pin write is in flight, so the buttons stay still. */
   pending: boolean
+  /**
+   * The one name of this tier whose body is open (F-56), as {@link ToolsView}
+   * holds it, plus the writer that toggles it.
+   *
+   * Until F-56 every row here was handed `onToggle: () => undefined`: the tier
+   * drew a disclosure that had nothing to disclose. The very reason a name is
+   * hidden is what its body now prints, so the press that opens it is real.
+   */
+  openTool?: string | undefined
+  /** Toggle one row's body. */
+  onToggleTool?: ((name: string) => void) | undefined
+  /**
+   * The project the definitions belong to and the session the tier is read in —
+   * the `GET tool` route's own two parameters, handed down by {@link ToolsView}.
+   */
+  projectRoot?: string | undefined
+  sessionId?: string | undefined
+  /** The session's own declared rows, for each open body's server state. */
+  rows?: readonly ServerRow[] | undefined
   t: Translate
 }): ReactNode {
   const { t } = props
@@ -2576,8 +3112,9 @@ export function HiddenTier(props: {
             ),
             // One row per name, the full `mcp__<server>__<tool>` the registry
             // carries, with the pin that moves it into the always-offered list.
-            // The row is not a disclosure of its own: a list read to be chosen
-            // needs no second level under each name.
+            // Since F-56 the row is a real disclosure: its body carries the
+            // reason the name is not in the request, which is the question this
+            // list is open to answer.
             ...entry.names.map((name) =>
               toolRow(
                 { name },
@@ -2588,7 +3125,14 @@ export function HiddenTier(props: {
                   disabled: props.pending,
                 },
                 'hidden',
-                { via: 'pin', open: false, onToggle: () => undefined },
+                {
+                  via: 'pin',
+                  open: props.openTool === name,
+                  onToggle: () => props.onToggleTool?.(name),
+                  rows: props.rows,
+                  projectRoot: props.projectRoot,
+                  sessionId: props.sessionId,
+                },
                 t,
               ),
             ),
@@ -2734,7 +3278,11 @@ export function ToolsView(props: {
 }): ReactNode {
   const { t } = props
   const tools = sessionToolsOf(props.project, props.sessionId)
-  /** One row's disclosure state, with the tier and the host's own step and time. */
+  /**
+   * One row's disclosure state: the tier, the host's own step and time, this
+   * session's declared rows (so the open body can name the serving server's
+   * state) and the route the body's definition is read from (F-56).
+   */
   const detailOf = (
     name: string,
     via: ToolDetail['via'],
@@ -2746,7 +3294,13 @@ export function ToolsView(props: {
     at,
     open: props.openTool === name,
     onToggle: () => props.onToggleTool?.(name),
+    rows: serverRows,
+    projectRoot: props.project.projectRoot,
+    sessionId: props.sessionId,
   })
+  // This session's own declared rows, read once for the open body's server state
+  // — the same list `tabBody` draws above this block (`sessionRowsOf`).
+  const serverRows = sessionRowsOf(props.project, props.sessionId)
   // `tools` absent is the host's only "not mounted yet" signal: a session with a
   // published offer that happens to be empty has real zeroes to print, and the
   // two states must not be conflated. The declared servers of the session are not
@@ -3029,6 +3583,14 @@ export function ToolsView(props: {
             onPinServer: props.onPinServer,
             pins: policy.pins,
             pending: props.pending === true,
+            // One open body at a time across the whole block (F-56), and the
+            // route its definition is read from: the hidden list's own rows are
+            // rows of this same surface, so they open on the same writer.
+            openTool: props.openTool,
+            onToggleTool: props.onToggleTool,
+            projectRoot: props.project.projectRoot,
+            sessionId: props.sessionId,
+            rows: serverRows,
             t,
           }),
         ],
@@ -3404,10 +3966,19 @@ export function LogsView(props: {
   )
 }
 
-/** Side card settings panel: the declaration detail plus per-project release. */
+/**
+ * Side card settings panel: the poll interval, the declaration detail and
+ * per-project release.
+ *
+ * The interval row used to be drawn by the sidebar itself, out of the tab
+ * descriptor's `pluginToggles`; the surface that drew it went with
+ * `dsh-better-sidebar`, so the row is part of this panel now, next to the state
+ * it paces. Everywhere else the panel is read-only.
+ */
 export function ProjectMcpSettings(props: {
-  pluginSettings: Record<string, unknown>
-  updatePluginSetting: (key: string, value: unknown) => void
+  refreshMs: number
+  /** Write a new interval; absent makes the row read-only (the design stand). */
+  onRefreshMs?: ((value: number) => void) | undefined
   onClose?: (() => void) | undefined
   /** Translate seat; the popup follows the shell's language when it is given one. */
   t?: Translate | undefined
@@ -3415,7 +3986,7 @@ export function ProjectMcpSettings(props: {
   hostT?: Translate | undefined
 }): ReactNode {
   const t = translateOf(props.t)
-  const { snapshot, error, busy, run } = useSnapshot(true, refreshMsOf(props.pluginSettings))
+  const { snapshot, error, busy, run } = useSnapshot(true, props.refreshMs)
   const projects = snapshot?.projects ?? []
   return h(
     'div',
@@ -3435,6 +4006,7 @@ export function ProjectMcpSettings(props: {
         ? null
         : h('button', { style: STYLE.button, onClick: () => props.onClose?.() }, t('close')),
     ),
+    h(RefreshRow, { refreshMs: props.refreshMs, onRefreshMs: props.onRefreshMs, t }),
     error === undefined ? null : h('div', { style: STYLE.error }, error),
     h(
       'div',
@@ -3451,6 +4023,58 @@ export function ProjectMcpSettings(props: {
             }),
           ),
     ),
+  )
+}
+
+/** Bounds the row offers, the steps a press moves it by, and the unit it prints. */
+export const REFRESH_MIN_MS = 1_000
+export const REFRESH_MAX_MS = 60_000
+export const REFRESH_STEP_MS = 500
+/** The unit symbol beside the field; a symbol, not copy, so it is not translated. */
+export const REFRESH_UNIT = 'ms'
+/** The field's id, so the row's label can point at it. */
+export const REFRESH_INPUT_ID = 'dsh-project-mcp-refresh-ms'
+
+/**
+ * The poll interval as one labelled row: the copy the sidebar's toggle used,
+ * the number field that replaces it, and the unit beside it.
+ *
+ * One implementation for both renderers — the product's settings panel and the
+ * design stand's popup draw this same row — so the two cannot drift. Without a
+ * writer the field is `readOnly` rather than absent: the stand shows the control
+ * the product shows, it just does not pretend a press changed anything.
+ */
+export function RefreshRow(props: {
+  refreshMs: number
+  onRefreshMs?: ((value: number) => void) | undefined
+  t?: Translate | undefined
+}): ReactNode {
+  const t = translateOf(props.t)
+  return h(
+    'div',
+    { style: STYLE.settingRow },
+    h(
+      'label',
+      { style: STYLE.settingLabel, htmlFor: REFRESH_INPUT_ID },
+      h('span', { style: STYLE.settingTitle }, t('refreshTitle')),
+      h('span', { style: STYLE.settingDesc }, t('refreshDesc')),
+    ),
+    h('input', {
+      id: REFRESH_INPUT_ID,
+      style: STYLE.settingInput,
+      type: 'number',
+      min: REFRESH_MIN_MS,
+      max: REFRESH_MAX_MS,
+      step: REFRESH_STEP_MS,
+      value: props.refreshMs,
+      readOnly: props.onRefreshMs === undefined,
+      'aria-label': t('refreshTitle'),
+      onChange: (event: { target: { value: string } }) => {
+        const next = Number(event.target.value)
+        if (Number.isFinite(next)) props.onRefreshMs?.(next)
+      },
+    }),
+    h('span', { style: STYLE.settingUnit }, REFRESH_UNIT),
   )
 }
 
@@ -4150,15 +4774,4 @@ export function basename(path: string): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-/** Read the persisted poll interval out of a plugin settings blob. */
-export function refreshMsOf(settings: Record<string, unknown>): number {
-  const value = settings[REFRESH_KEY]
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : DEFAULT_REFRESH_MS
-}
-
-/** Read the settings blob of this descriptor from the sidebar snapshot. */
-export function pluginSettingsOf(snapshot: { prefs: { pluginSettings?: Record<string, Record<string, unknown>> } }): Record<string, unknown> {
-  return snapshot.prefs.pluginSettings?.[TAB_ID] ?? {}
 }

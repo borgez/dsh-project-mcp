@@ -1,55 +1,51 @@
 /**
- * `dsh-project-mcp`, browser half: a DSH sidebar tab that shows which MCP
+ * `dsh-project-mcp`, browser half: a DSH right-sidebar tab that shows which MCP
  * servers each project declares and what is currently mounted for its sessions,
- * its own settings panel in the side card settings popup, a page in DSH's
- * native Settings listing every project with a live session, and a frame-wide
- * toast stack for the servers that come up, fail or are released.
+ * its own settings popup in the tab chip's actions menu, a page in DSH's native
+ * Settings listing every project with a live session, and a frame-wide toast
+ * stack for the servers that come up, fail or are released.
  *
- * Registered through the `dsh-better-sidebar` service and two browser-shell
- * seats — the `settings.section` slot and the `shell.overlay` floating layer.
- * Both seats exist in the browser half only. The
- * host half publishes the same data over `/project-mcp/*` (see `src/ui.ts`), so
- * this module never imports host code at runtime.
+ * The tab is a type of DSH's own right sidebar (`./sidebar-tab.ts`, which mirrors
+ * the shipped contract structurally), and the popup is an entry of the frame-wide
+ * floating layer. The other three seats are the browser-shell slots
+ * `settings.section`, `plugins.bundle.config` and `shell.overlay`. Every seat
+ * exists in the browser half only. The host half publishes the same data over
+ * `/project-mcp/*` (see `src/ui.ts`), so this module never imports host code at
+ * runtime.
  *
  * @module dsh-project-mcp/client
  */
 
-import { createElement, useEffect, useState } from 'react'
+import { createElement } from 'react'
 import type { ReactNode } from 'react'
-import type { BetterSidebarService, TabDescriptor } from 'dsh-better-sidebar'
 import type { Context } from '@deepseek-ai/cordis'
-import { PACKAGE_NAME, TAB_ID } from '../shared.ts'
+import { PACKAGE_NAME } from '../shared.ts'
 import { designModeEnabled, registerDesignSurfaces } from './design.ts'
 import { en, ru, zh } from './locales/ui.ts'
-import { NS_HOST, en as hostEn, ru as hostRu, zh as hostZh, hostTranslate } from './locales/host.ts'
+import { NS_HOST, en as hostEn, ru as hostRu, zh as hostZh } from './locales/host.ts'
 import { registerPluginConfigCard } from './plugin-config.ts'
 import type { PluginConfigSlotServices } from './plugin-config.ts'
 import { NS, registerSettingsTab } from './settings.ts'
 import type { SettingsSlotServices } from './settings.ts'
-import { localeServiceOf, tabTranslate, useTabTranslate } from './tab-locale.ts'
-import type { TabLocale } from './tab-locale.ts'
+import { localeServiceOf } from './tab-locale.ts'
+import { registerSidebarTab } from './sidebar-tab.ts'
+import type { SidebarSettingsProps, SidebarTabBodyProps, SidebarTabServices } from './sidebar-tab.ts'
 import { registerToasts } from './toasts.ts'
 import type { ToastsServices } from './toasts.ts'
-import {
-  ProjectMcpPanel,
-  ProjectMcpSettings,
-  REFRESH_KEY,
-  pluginSettingsOf,
-  refreshMsOf,
-} from './view.ts'
+import { ProjectMcpPanel, ProjectMcpSettings, createRefreshStore } from './view.ts'
 
 /** Plugin name: matches the package name and the host half. */
 export const name = PACKAGE_NAME
 
 /**
- * Register the three surfaces, each behind the service it actually needs.
+ * Register the surfaces, each behind the services it actually needs.
  *
- * No module-level dependency is declared, because the sidebar is optional: a
- * module-level `inject` would leave this entry **pending** for good in a
- * composition without `dsh-better-sidebar`, and DSH's web boot audit refuses to
+ * No module-level dependency is declared, because every one of them is optional:
+ * a module-level `inject` would leave this entry **pending** for good in a
+ * composition without the right sidebar, and DSH's web boot audit refuses to
  * start while an entry is pending. `ctx.inject(name, …)` waits for the same
- * service without gating the entry, so a composition without the sidebar keeps
- * the native Settings page and the toast stack.
+ * services without gating the entry, so a composition without the sidebar keeps
+ * the native Settings page, the config card and the toast stack.
  *
  * A service this fiber did not declare must never be read as a property: Cordis
  * throws `cannot get property "…" without inject`, and that throw fails the
@@ -59,81 +55,46 @@ export const name = PACKAGE_NAME
 export const inject: string[] = []
 
 /**
- * Register the browser half's surfaces. `registerTab` returns a disposer and
- * Cordis runs it on fiber disposal, which is what keeps HMR and plugin disabling
- * free of "already registered" failures.
+ * Register the browser half's surfaces. Every registration returns a disposer and
+ * Cordis runs them on fiber disposal, which is what keeps HMR and plugin
+ * disabling free of "already registered" failures.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  // The design-only render mode: when the flag names a picture, the three
+  // The design-only render mode: when the flag names a picture, the four
   // surfaces below are registered from fixtures instead (`./design.ts`). It is a
-  // replacement, never an addition — two registrations of one tab id would fight
-  // over the same sidebar cell. The flag is a browser-local preference, so the
-  // product and the fixture mode are one bundle apart, not one build apart.
+  // replacement, never an addition — two registrations of one tab type id would
+  // fight over the same sidebar cell. The flag is a browser-local preference, so
+  // the product and the fixture mode are one bundle apart, not one build apart.
   if (designModeEnabled()) {
     registerDesignSurfaces(ctx)
     return
   }
 
-  // The tab is the one surface rendered outside the slot framework, so it is
-  // also the one that has to bind its own translate seat: the shell's locale
-  // service, read with `ctx.get` because this fiber does not declare it, with
-  // the plugin's dictionary registered below. Without a locale service the seat
-  // falls back to the merged English table composed in ./locales/ui.ts.
+  // The plugin's own translate seat: the slots below are registered without a
+  // locale namespace of their own, because the plugin registers its dictionaries
+  // itself and wants the tab to repaint on a language switch either way. The
+  // shell's locale service is read with `ctx.get` — this fiber does not declare
+  // it — and without one the seat falls back to the merged English table
+  // composed in ./locales/ui.ts.
   const locale = localeServiceOf(ctx)
-  const t = tabTranslate(locale)
 
-  // The sidebar tab. `ctx.inject` parks this callback until the service exists
-  // and re-runs it when the service is replaced, so a composition without the
-  // sidebar simply has no tab while everything below still registers.
-  ctx.inject(['betterSidebar'], (scope) => {
-    const betterSidebar = (scope as unknown as { betterSidebar: BetterSidebarService }).betterSidebar
-    scope.effect(() =>
-      betterSidebar.registerTab({
-        id: TAB_ID,
-        title: () => t('tab'),
-        description: () => t('tabDescription'),
-        order: 55,
-        single: true,
-        settings: {
-          pluginToggles: [
-            {
-              key: REFRESH_KEY,
-              // Live copy, the closure shape: the sidebar's `SidebarSettingToggle`
-              // declares `title`/`desc` as `string | (() => string)` ("i18n
-              // friendly", service.ts), exactly like the descriptor's own title
-              // above, so the row re-reads the seat on every render and no
-              // re-registration is needed. (The alternative — strings resolved
-              // at registration plus a re-register on locale change — would
-              // leave the row frozen until then.)
-              title: () => t('refreshTitle'),
-              desc: () => t('refreshDesc'),
-              type: 'number',
-              min: 1_000,
-              max: 60_000,
-              unit: 'ms',
-            },
-          ],
-          render: (props: Parameters<NonNullable<NonNullable<TabDescriptor['settings']>['render']>>[0]) =>
-            createElement(LocalizedSettings, {
-              pluginSettings: props.pluginSettings,
-              updatePluginSetting: props.updatePluginSetting,
-              onClose: props.close,
-              locale,
-            }),
-        },
-        // `LocalizedPanel` re-binds the seat when the shell's language changes:
-        // the descriptor's own title is read again by the sidebar on every render,
-        // and the panel below it subscribes to the same service.
-        component: (props: Parameters<TabDescriptor['component']>[0]) =>
-          createElement(LocalizedPanel, {
-            locale,
-            visible: props.visible,
-            sessionId: props.scope.sessionId,
-            refreshMs: refreshMsOf(pluginSettingsOf(betterSidebar.getSnapshot())),
-          }),
-      }),
-    )
+  // The panel's poll interval, shared by the tab it paces and the popup that
+  // changes it. One store for both, because the two are not in one tree.
+  const refresh = createRefreshStore()
+
+  // The sidebar tab, its chip's settings row and the settings popup itself:
+  // `./sidebar-tab.ts` holds the structural contract of DSH's own right sidebar
+  // and registers all four seats behind the services they need. `ctx.inject`
+  // parks this callback until the slot registry and the tab registry exist, so a
+  // composition without a right sidebar still boots everything below.
+  ctx.inject(['slots', 'sidebarRightTabs'], (scope) => {
+    registerSidebarTab(scope as unknown as SidebarTabServices, {
+      locale,
+      refresh,
+      body: LocalizedPanel,
+      settings: LocalizedSettings,
+    })
   })
 
   // The native Settings page. `ctx.inject` runs this callback only once both
@@ -196,60 +157,40 @@ export function apply(ctx: Context): void {
 }
 
 /**
- * The sidebar panel with its translate seat.
+ * The sidebar panel.
  *
- * `useTabTranslate` binds the plugin's namespace to the shell's locale service
- * and subscribes to the locale snapshot, so a language switch repaints the tab —
- * the one thing the settings page gets from the slot framework for free.
- * @param props - the panel's props plus the locale service, when there is one.
- * @returns the panel element with its translator.
+ * `./sidebar-tab.ts` already bound the two translate seats — the UI namespace and
+ * the host-message one — before calling this, so the adapter has nothing left to
+ * do but name the component and let React render it as an element rather than as
+ * a bare call.
+ * @param props - the body's props, seats included.
+ * @returns the panel element.
  */
-export function LocalizedPanel(props: {
-  locale: TabLocale | undefined
-  visible: boolean
-  sessionId: string | undefined
-  refreshMs: number
-}): ReactNode {
-  const t = useTabTranslate(props.locale)
-  // The host namespace beside the UI one: the Logs tab renders the host's
-  // coded events (F-48), and the seat follows the active language the same way
-  // `t` does — the repaint rides on `t`'s re-bind.
-  const hostT = hostTranslate(props.locale)
+export function LocalizedPanel(props: SidebarTabBodyProps): ReactNode {
   return createElement(ProjectMcpPanel, {
     visible: props.visible,
     sessionId: props.sessionId,
     refreshMs: props.refreshMs,
-    t,
-    hostT,
+    t: props.t,
+    hostT: props.hostT,
   })
 }
 
 /**
- * The side card settings popup with the same translate seat.
+ * The settings popup's content, with the same two seats.
  *
- * The popup is rendered by the sidebar service too, so it needs the seat for the
- * same reason the tab does: `ProjectMcpSettings` carries no hook of its own, and
- * a language switch should repaint its chrome rather than wait for the next
- * poll.
- * @param props - the popup's props plus the locale service, when there is one.
- * @returns the popup element with its translator.
+ * The popup is an entry of the frame-wide floating layer, so its chrome has to
+ * repaint on a language switch exactly like the tab's: the seats are bound per
+ * render by `./sidebar-tab.ts`, and this adapter only names the component.
+ * @param props - the popup's props, seats included.
+ * @returns the settings panel element.
  */
-export function LocalizedSettings(props: {
-  locale: TabLocale | undefined
-  pluginSettings: Record<string, unknown>
-  updatePluginSetting: (key: string, value: unknown) => void
-  onClose?: (() => void) | undefined
-}): ReactNode {
-  const t = useTabTranslate(props.locale)
-  // The host namespace beside the UI one: the popup renders the host's coded
-  // payload fields (F-48), and the bound seat follows the active language the
-  // same way `t` does — the repaint still rides on `t`'s re-bind.
-  const hostT = hostTranslate(props.locale)
+export function LocalizedSettings(props: SidebarSettingsProps): ReactNode {
   return createElement(ProjectMcpSettings, {
-    pluginSettings: props.pluginSettings,
-    updatePluginSetting: props.updatePluginSetting,
+    refreshMs: props.refreshMs,
+    onRefreshMs: props.onRefreshMs,
     onClose: props.onClose,
-    t,
-    hostT,
+    t: props.t,
+    hostT: props.hostT,
   })
 }

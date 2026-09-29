@@ -6,7 +6,7 @@
  * Lazy-CJS module table (`factory(require)` → exports). This spec replays that
  * exact path against the built `lib/client.js`, so a bundle that would take the
  * whole boot down — ESM syntax, an unresolvable `require`, a missing factory, a
- * drifted descriptor — fails here instead of in the browser.
+ * drifted registration — fails here instead of in the browser.
  *
  * Build first: `pnpm build`.
  */
@@ -19,6 +19,9 @@ import { describe, expect, it } from 'vitest'
 const here = dirname(fileURLToPath(import.meta.url))
 const bundlePath = join(here, '..', 'lib', 'client.js')
 
+/** `localStorage` key the panel's poll interval is persisted under. */
+const REFRESH_STORAGE_KEY = 'dsh-project-mcp:servers:refreshMs'
+
 interface LoadedFactory {
   id?: string
   factory?: (require: (specifier: string) => unknown) => Record<string, unknown>
@@ -28,20 +31,46 @@ interface LoadedFactory {
 const react = {
   createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({
     type,
-    props,
-    children,
+    props: { ...(props as Record<string, unknown>), children },
   }),
   useCallback: (callback: unknown) => callback,
   useEffect: () => undefined,
-  // The seat's lazy initializer is honoured so the descriptor's own copy is read
-  // the way the browser reads it; the setter is a no-op outside a renderer.
-  useState: (initial: unknown) => [typeof initial === 'function' ? (initial as () => unknown)() : initial, () => undefined],
+  // A state hook honours the lazy initializer, so the persisted poll interval is
+  // read the way the browser reads it; the setter is a no-op outside a renderer.
+  useState: (initial: unknown) => [
+    typeof initial === 'function' ? (initial as () => unknown)() : initial,
+    () => undefined,
+  ],
   Fragment: Symbol('Fragment'),
 }
 
-/** A `SidebarStore`-shaped snapshot with this descriptor's settings blob. */
-function snapshotWith(settings: Record<string, unknown>) {
-  return { sessionId: 's1', state: undefined, prefs: { pluginSettings: { 'dsh-project-mcp:servers': settings } } }
+/**
+ * A locale service that keeps what it was told.
+ *
+ * `bind` answers from the registered English table the way the shell's own
+ * lookup chain ends in it, so a surface bound through this seat reads real copy
+ * rather than raw keys — which is what makes the registry's title assertion here
+ * mean something.
+ */
+function fakeLocale() {
+  const calls = { languages: [] as unknown[], dictionaries: [] as string[] }
+  const tables = new Map<string, Record<string, string>>()
+  return {
+    calls,
+    tables,
+    service: {
+      register: (namespace: string, dictionaries: Record<string, Record<string, string>>) => {
+        calls.dictionaries.push(namespace)
+        tables.set(namespace, dictionaries.en ?? {})
+        return () => undefined
+      },
+      addLanguage: (input: unknown) => {
+        calls.languages.push(input)
+        return () => undefined
+      },
+      bind: (namespace: string) => (key: string) => tables.get(namespace)?.[key] ?? key,
+    },
+  }
 }
 
 /**
@@ -54,9 +83,11 @@ function snapshotWith(settings: Record<string, unknown>) {
  * (`vendor/cordis/src/reflect.ts`). Reading an optional service as a property
  * therefore takes the entire web boot down, so this double throws the same way
  * and only answers `get(name)`.
- * @param settings - persisted plugin settings handed to the panel through prefs.
+ * @param options - services to leave out of the composition, and the interval
+ *   to leave behind in browser storage before `apply` runs.
+ * @returns the loaded entry, its exports, the context double and what it recorded.
  */
-function load(settings: Record<string, unknown> = {}) {
+function load(options: { without?: readonly string[]; refreshMs?: number } = {}) {
   const source = readFileSync(bundlePath, 'utf8')
   const loaded: LoadedFactory[] = []
   const fakeWindow = {
@@ -78,17 +109,33 @@ function load(settings: Record<string, unknown> = {}) {
 
   // `apply` registers through `ctx.effect`, which owns the disposer lifecycle.
   const effects: unknown[] = []
-  const registered: Record<string, unknown>[] = []
+  /** Tab types claimed in the right sidebar's registry. */
+  const tabs: Record<string, unknown>[] = []
+  /** Slot registrations, with the component each one carries. */
+  const registrations: { options: Record<string, unknown>; component: unknown }[] = []
   const injected: unknown[][] = []
+  const locale = fakeLocale()
   const services: Record<string, unknown> = {
-    betterSidebar: {
-      registerTab: (descriptor: Record<string, unknown>) => {
-        registered.push(descriptor)
+    slots: {
+      inject: (_slot: string, callback: () => unknown) => {
+        callback()
         return () => undefined
       },
-      getSnapshot: () => snapshotWith(settings),
+      register: (options: Record<string, unknown>, component: unknown) => {
+        registrations.push({ options, component })
+        return () => undefined
+      },
     },
+    sidebarRightTabs: {
+      register: (definition: Record<string, unknown>) => {
+        tabs.push(definition)
+        return () => undefined
+      },
+    },
+    locale: locale.service,
   }
+  for (const name of options.without ?? []) delete services[name]
+
   const strict = <T extends object>(target: T, deps: readonly string[] = []) => new Proxy(target, {
     get: (source, prop, receiver) => {
       if (Reflect.has(source, prop)) return Reflect.get(source, prop, receiver)
@@ -106,15 +153,42 @@ function load(settings: Record<string, unknown> = {}) {
     effect: (run: () => unknown) => {
       effects.push(run())
     },
-    // Cordis runs the callback once every declared service exists; the tab's
-    // registration is parked behind the one service it needs.
+    // Cordis runs the callback once every declared service exists; each surface
+    // is parked behind the services it named.
     inject: (deps: string[], callback: (scope: unknown) => void) => {
       injected.push(deps)
       if (deps.every((name) => services[name] !== undefined)) callback(scopeFor(deps))
     },
     get: (name: string) => services[name],
   })
-  return { entry, exports, ctx, services, effects, injected, registered, requests }
+  const storage = installStorage(
+    options.refreshMs === undefined ? {} : { [REFRESH_STORAGE_KEY]: String(options.refreshMs) },
+  )
+  return { entry, exports, ctx, effects, injected, tabs, registrations, requests, locale, storage }
+}
+
+/** An in-memory `localStorage`, removed by {@link uninstallStorage}. */
+function installStorage(values: Record<string, string>) {
+  const store: Record<string, string> = { ...values }
+  Reflect.set(globalThis, 'localStorage', {
+    getItem: (key: string): string | null => store[key] ?? null,
+    setItem: (key: string, value: string): void => {
+      store[key] = value
+    },
+  })
+  return {
+    values: store,
+    uninstall: () => Reflect.deleteProperty(globalThis, 'localStorage'),
+  }
+}
+
+/** Run `apply` and clean up the browser-local storage every run installs. */
+function applyBundle(composition: ReturnType<typeof load>): void {
+  try {
+    ;(composition.exports?.apply as (ctx: unknown) => void)(composition.ctx)
+  } finally {
+    composition.storage.uninstall()
+  }
 }
 
 describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
@@ -126,129 +200,172 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     expect(exports?.inject).toEqual([])
     expect(typeof exports?.apply).toBe('function')
     // Only baseline modules may be requested; anything else throws mid-load.
-    // The plugin reaches the slot service through `ctx.slots`, so `react` is the
-    // whole list — and the smallest possible surface for this bundle to break on.
+    // The plugin reaches every service through `ctx`, so `react` is the whole
+    // list — and the smallest possible surface for this bundle to break on.
     expect([...new Set(requests)]).toEqual(['react'])
   })
 
   it('parks the tab, the settings page and the toast stack behind the services they need', () => {
-    const { exports, ctx, injected, registered } = load()
-    ;(exports?.apply as (ctx: unknown) => void)(ctx)
+    const composition = load()
+    applyBundle(composition)
 
-    // The sidebar service is optional; this plugin must not force-load the
-    // incompatible sidebar bundle during web boot, and must not gate the entry
-    // on it either.
-    expect(exports?.inject).toEqual([])
-    expect(registered).toHaveLength(1)
-    // Each surface waits only for what it needs: the tab for the sidebar, the
+    // Every service is optional; this plugin must not force-load another
+    // plugin's bundle during web boot, and must not gate the entry on any of
+    // them either.
+    expect(composition.exports?.inject).toEqual([])
+    expect(composition.tabs).toHaveLength(1)
+    // Each surface waits only for what it needs: the tab type and its three
+    // seats for the slot registry plus the right sidebar's tab registry, the
     // settings page for the slot registry plus the locale, the configuration
     // card (F-54) for the same pair plus `configForms` — in an inject of its
-    // own, so the settings tab never depends on it — and the toast stack for
-    // the same pair again: the locale seat is what lets a language switch
-    // repaint the banners on screen.
-    expect(injected).toEqual([
-      ['betterSidebar'],
+    // own, so the settings tab never depends on it — and the toast stack for the
+    // same pair again: the locale seat is what lets a language switch repaint
+    // the banners on screen.
+    expect(composition.injected).toEqual([
+      ['slots', 'sidebarRightTabs'],
       ['slots', 'locale'],
       ['slots', 'locale', 'configForms'],
       ['slots', 'locale'],
     ])
   })
 
-  it('keeps the browser half bootable without the optional sidebar service', () => {
-    const { exports, ctx, services, effects, registered } = load()
-    delete services.betterSidebar
+  it('keeps the browser half bootable without the right sidebar', () => {
+    const composition = load({ without: ['sidebarRightTabs'] })
+    applyBundle(composition)
 
-    ;(exports?.apply as (ctx: unknown) => void)(ctx)
-
-    expect(effects).toHaveLength(0)
-    expect(registered).toHaveLength(0)
+    // No tab type and no sidebar seat: the three surfaces that do not need a
+    // sidebar — the settings page, its configuration card and the toast stack —
+    // register exactly as before, and the dictionaries still land.
+    expect(composition.tabs).toHaveLength(0)
+    expect(composition.registrations).toHaveLength(2)
+    expect(composition.effects).toHaveLength(3)
+    expect(composition.locale.calls.dictionaries).toHaveLength(2)
   })
 
-  it('reads the optional sidebar through ctx.get, so an undeclared service cannot throw', () => {
-    const { exports, ctx } = load()
+  it('reads every optional service through ctx.get, so an undeclared one cannot throw', () => {
+    const composition = load()
 
     // The proxy above is the real rule: any other property read throws. `apply`
     // completing proves every optional service went through `get`.
     expect(() => {
-      ;(exports?.apply as (ctx: unknown) => void)(ctx)
+      applyBundle(composition)
     }).not.toThrow()
   })
 
-  it('registers exactly one tab descriptor and disposes it through ctx.effect', () => {
-    const { exports, ctx, effects, registered } = load()
-    ;(exports?.apply as (ctx: unknown) => void)(ctx)
+  it('claims one tab type, one body, one menu row, one popup and the two other surfaces', () => {
+    const composition = load()
+    applyBundle(composition)
 
-    expect(registered).toHaveLength(1)
-    expect(effects).toHaveLength(1)
+    expect(composition.effects).toHaveLength(4)
 
-    const descriptor = registered[0] as Record<string, unknown>
+    const descriptor = composition.tabs[0] as Record<string, unknown>
     expect(descriptor.id).toBe('dsh-project-mcp:servers')
-    expect(descriptor.order).toBe(55)
-    expect(descriptor.single).toBe(true)
-    // The host renders descriptions only while the guide lists ≤ 4 entries.
-    // The descriptor's own copy is read without a locale service here, so it is
+    expect(descriptor.kind).toBe('project-mcp')
+    // The host renders a guide description only while the guide lists few enough
+    // entries. The copy is read without a locale service binding here, so it is
     // the panel's English table; `tests/tab-locale.spec.ts` covers the bound seat.
-    expect((descriptor.title as () => string)()).toBe('Project MCP')
-    expect((descriptor.description as () => string)()).toBe(
+    expect((descriptor.title as (address: string) => string)('')).toBe('Project MCP')
+    const guide = descriptor.guide as { order: number; title: () => string; description: () => string }[]
+    expect(guide).toHaveLength(1)
+    expect(guide[0]?.order).toBe(55)
+    expect(guide[0]?.title()).toBe('Project MCP')
+    expect(guide[0]?.description()).toBe(
       'MCP servers each project declares, and what is mounted for its sessions',
     )
-    // Without a locale service in the composition the tab's own English table
-    // answers; `tests/tab-locale.spec.ts` covers the bound seat.
-    expect('locale' in ctx).toBe(false)
 
-    const settings = descriptor.settings as {
-      pluginToggles: Record<string, unknown>[]
-      render: (props: Record<string, unknown>) => unknown
-    }
-    expect(settings.pluginToggles.map((row) => row.key)).toEqual(['refreshMs'])
-    expect(typeof settings.render).toBe('function')
-    expect(typeof descriptor.component).toBe('function')
+    expect(composition.registrations.map((entry) => entry.options.name)).toEqual([
+      'sidebar.right.pane.tab',
+      'sidebar.right.pane.tab.title',
+      'sidebar.right.tab.menu.item',
+      'shell.overlay',
+      'settings.section',
+      'shell.overlay',
+    ])
+    expect(composition.registrations[0]?.options).toEqual({
+      name: 'sidebar.right.pane.tab',
+      key: 'dsh-project-mcp:servers',
+    })
+    expect(composition.registrations[1]?.options).toEqual({
+      name: 'sidebar.right.pane.tab.title',
+      key: 'dsh-project-mcp:servers',
+    })
+    expect(composition.registrations[2]?.options).toMatchObject({ id: 'dsh-project-mcp:settings' })
+    expect(composition.registrations[3]?.options).toMatchObject({ id: 'dsh-project-mcp:settings-dialog' })
+    expect(composition.registrations[4]?.options).toMatchObject({ id: 'dsh-project-mcp' })
+    expect(composition.registrations[5]?.options).toMatchObject({ id: 'dsh-project-mcp:toasts' })
+    expect('locale' in composition.ctx).toBe(false)
   })
 
   it('renders the panel without polling while the tab is hidden', () => {
-    const { exports, ctx, registered } = load({ refreshMs: 1_500 })
-    ;(exports?.apply as (ctx: unknown) => void)(ctx)
+    const composition = load({ refreshMs: 1_500 })
+    applyBundle(composition)
 
-    const descriptor = registered[0] as Record<string, unknown>
-    const element = (
-      descriptor.component as (props: Record<string, unknown>) => {
-        type: unknown
-        props: Record<string, any>
-      }
-    )({
-      ctx,
-      store: {},
-      scope: { sessionId: 's1' },
-      tab: { id: 'dsh-project-mcp:servers' },
-      visible: false,
+    const body = composition.registrations[0]?.component as (props: unknown) => {
+      type: (props: unknown) => unknown
+      props: unknown
+    }
+    const adapter = body({
+      sessionId: 's1',
+      useTabInfo: () => ({ tab: { visible: false } }),
     })
+    const element = adapter.type(adapter.props) as {
+      type: unknown
+      props: Record<string, unknown>
+    }
 
-    // The descriptor composes the panel with the shell's translate seat, so the
-    // tab's copy can follow the language preference — and it still renders when
-    // the composition has no locale service, falling back to English.
-    expect(element.type).toBe(exports?.LocalizedPanel)
-    expect(element.props.locale).toBeUndefined()
-    // The poll interval travels from `prefs.pluginSettings[TAB_ID]` into the
-    // panel as a plain prop — no settings read inside render code.
+    // The body composes the panel with the shell's translate seat, so the tab's
+    // copy can follow the language preference — and it still renders when the
+    // composition has no locale service, falling back to English.
+    expect(element.type).toBe(composition.exports?.LocalizedPanel)
+    // The poll interval now comes from browser storage rather than from a
+    // sidebar-owned settings blob: the panel reads it, no service needed.
     expect(element.props.refreshMs).toBe(1_500)
     expect(element.props.visible).toBe(false)
     expect(element.props.sessionId).toBe('s1')
   })
 
-  it('hands the settings popup this descriptor’s own blob', () => {
-    const { exports, ctx, registered } = load()
-    ;(exports?.apply as (ctx: unknown) => void)(ctx)
+  it('hands the settings popup the live interval and a writer that persists it', () => {
+    const composition = load({ refreshMs: 1_500 })
+    applyBundle(composition)
 
-    const settings = (registered[0] as Record<string, unknown>).settings as {
-      render: (props: Record<string, unknown>) => { props: { pluginSettings: unknown } }
+    const entry = composition.registrations[3]?.component as (props: unknown) => {
+      type: (props: unknown) => unknown
+      props: {
+        store: { open(): void; isOpen(): boolean; close(): void }
+        settings: (props: unknown) => unknown
+      }
     }
-    // `settings.render` receives the blob itself, not the whole prefs document.
-    const rendered = settings.render({
-      pluginSettings: { refreshMs: 1_500 },
-      updatePluginSetting: () => undefined,
-      close: () => undefined,
-    })
+    const dialog = entry({})
+    // Closed at rest: the floating layer holds an empty cell until the menu row
+    // opens the store.
+    expect(dialog.props.store.isOpen()).toBe(false)
+    expect(dialog.type(dialog.props)).toBeNull()
 
-    expect(rendered.props.pluginSettings).toEqual({ refreshMs: 1_500 })
+    dialog.props.store.open()
+    const tree = dialog.type(dialog.props)
+    const panel = elementsOf(tree).find(
+      (element) => element.type === composition.exports?.LocalizedSettings,
+    )
+    expect(panel).toBeDefined()
+    if (panel === undefined) throw new Error('the popup drew no settings panel')
+
+    expect(panel.props.refreshMs).toBe(1_500)
+    expect(panel.props.onClose).toBeTypeOf('function')
+    // The writer the popup is handed is the shared store's, and it persists
+    // before it publishes: the interval survives a reload.
+    ;(panel.props.onRefreshMs as (value: number) => void)(4_000)
+    expect(Reflect.get(composition.storage.values, REFRESH_STORAGE_KEY)).toBe('4000')
   })
 })
+
+/** Every element in a tree the bundled `createElement` built, the root included. */
+function elementsOf(node: unknown): { type: unknown; props: Record<string, unknown> }[] {
+  if (node === null || node === undefined || typeof node !== 'object') return []
+  if (Array.isArray(node)) return node.flatMap((child) => elementsOf(child))
+  const element = node as { type: unknown; props: { children?: unknown } }
+  const children = Array.isArray(element.props?.children) ? element.props.children : []
+  return [
+    element as { type: unknown; props: Record<string, unknown> },
+    ...children.flatMap((child) => elementsOf(child)),
+  ]
+}

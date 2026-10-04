@@ -12,7 +12,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: the ubuntu-latest label migrates to Ubuntu 26 on 2026-10-19 — move this, and re-run the gate, deliberately
 
     strategy:
       matrix:
@@ -20,12 +20,12 @@ jobs:
         # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: pnpm/action-setup@v4
+    - uses: actions/checkout@v7
+    - uses: pnpm/action-setup@v6
       with:
         version: 10
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'pnpm'

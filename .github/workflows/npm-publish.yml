@@ -37,25 +37,25 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: the ubuntu-latest label migrates to Ubuntu 26 on 2026-10-19 — move this, and re-run the gate, deliberately
     # Mirrors the checkout's `ref:` below for the shell steps; the checkout
     # cannot read `env`, so the expression is repeated there.
     env:
       REF: ${{ inputs.ref || github.event.release.tag_name || github.ref }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.event.release.tag_name || github.ref }}
           # The version comes from `package.json`, not from git: no history is
           # needed, and the ref above is the tag or the release's tag name.
           fetch-depth: 1
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org/

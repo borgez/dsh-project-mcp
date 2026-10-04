@@ -190,8 +190,20 @@ because only `anywhere` shrinks the min-content width the flex row measures).
 (`Pin`/`Unpin`/`Hide` — there is no button inside a button) + on disclosure a `div`
 (`STYLE.toolDetail`, `flex-basis:100%`, `padding-left:12px`) with the full name (mono) and a fact
 line: `server {server} · pinned` / `via: session` / `via: context` + `step {n}` + the time —
-**only what the host published**. The contract does not promise a single tool's size, so the
-disclosure does not have it.
+**only what the host published**. Since F-56 the body then carries the counter readings apart
+(`{n} in the project` · `{n} in this session`, muted — only when the host recorded any) and the
+host's own answer about the definition, read once per opened row over
+`GET <prefix>/tool?projectRoot=&sessionId=&name=` (`runtime.ts`, `toolFactsOf`): the
+model-facing `description` verbatim, the accepted fields (top-level
+`parameters.properties`: name, type, `*` when the schema's own `required` names it, the property's
+own description; a nested object or array is drawn as its type, and a `default` is never
+published), and — for a name the session's request does **not** offer — the reason it is not,
+carrying only figures the host measured (`chars` of the definition, `budget`, `used`). The read
+draws one muted line while it is in flight (`toolLoading`) and one when the host did not answer
+(`toolFailed`); a **deferred** name answers exactly like an offered one, because the definition is
+read from the scope bridge that registered it. A row composed without a route (a unit test's own
+row) draws that one line and nothing else — no name and no fact line for a host nobody asked. The
+contract does not promise a single tool's size, so the disclosure does not have it.
 
 **The filter panel (F-43)** stands between the budget line (and the spent-budget `warnNote`) and
 the groups: the query field (`input[type=search]`, `STYLE.filterInput`, `aria-label` —

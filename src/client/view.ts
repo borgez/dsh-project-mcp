@@ -128,10 +128,13 @@ export const en = {
   // under with the state it is in, the tier said as a sentence, the two counter
   // readings apart, and then what only the host can answer — the definition's
   // own description, its fields, and why a hidden name is not in the request.
-  // The name, the clock and the step stay in the header; a body that repeated
-  // them was the copy this unit removed. The host publishes no size for a single
-  // tool, so the budget estimate stays in the group line above — the only figure
-  // the reason line prints is a measurement the host sent it.
+  // The name, the clock and the step stay in the header, and the block prints
+  // them again in its own fact line because the contract's own probe reads the
+  // full `mcp__<server>__<tool>`, the step and the clock out of the open body
+  // (`contracts/surfaces.md` §1.5) — see the `idea` row that parks that question
+  // in `docs/features.md`. The host publishes no size for a single tool, so the
+  // budget estimate stays in the group line above — the only figure the reason
+  // line prints is a measurement the host sent it.
   toolServer: 'server {server}',
   toolServerState: '{server} · {state}',
   toolTierPinned: 'pinned — always in the request',
@@ -1377,6 +1380,12 @@ export async function fetchToolFacts(
     const response = await fetchImpl(`${ROUTE_PREFIX}/${action}?${query.toString()}`)
     const payload = (await response.json()) as Envelope<ToolFacts>
     if (payload.ok !== true || payload.value === undefined) return undefined
+    // A host that answered the envelope with something that is not a record is
+    // as unreadable as a refusal: caching it under the row's key would put a
+    // shape the body cannot draw on screen, so the panel takes the failure line
+    // instead of an invented definition.
+    const value = payload.value as Partial<ToolFacts>
+    if (typeof value.name !== 'string' || !Array.isArray(value.fields)) return undefined
     return payload.value
   } catch {
     return undefined
@@ -2751,18 +2760,62 @@ function fieldLine(field: ToolField, index: number, t: Translate): ReactNode {
 }
 
 /**
+ * The one line that says where the definition is coming from: the read on its
+ * way, or the host's own refusal. Nothing at all once the record is in hand —
+ * the record draws itself.
+ * @param view - what the cache holds for this name right now.
+ * @param t - translate seat.
+ * @returns the read's own line, or `null` while there is nothing to say.
+ */
+function toolFactsReadLine(view: ToolFactsView, t: Translate): ReactNode {
+  if (view.state === 'facts') return null
+  const copy = view.state === 'failure' ? t('toolFailed') : t('toolLoading')
+  return h('div', { key: 'read', style: STYLE.dim }, copy)
+}
+
+/**
+ * The row's own fact line: the server the name was registered under — carrying
+ * the state the session's declared rows give that server, when they name it —
+ * the tier as a sentence, and the step and the clock only while the host
+ * published them. A name without the `mcp__` prefix names no server and gets no
+ * server phrase rather than an invented one.
+ * @param name - the registry name on the row.
+ * @param detail - the tier, the step, the clock and the session's own rows.
+ * @param t - translate seat.
+ * @returns the facts joined as one line, in the contract's order.
+ */
+function toolFactsLine(name: string, detail: ToolDetail, t: Translate): string {
+  const server = serverOfToolName(name)
+  const state = toolServerState(name, detail.rows, t)
+  return [
+    server === undefined ? undefined : t('toolServer', { server: state ?? server }),
+    toolTierSentence(detail.via, t),
+    detail.step === undefined ? undefined : t('toolsStep', { step: detail.step }),
+    detail.at === undefined ? undefined : toolTime(detail.at),
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(' · ')
+}
+
+/**
  * The body of one opened tool row: the facts the header does not hold.
  *
- * The header already carries the registry name, the clock and the step, so this
- * block carries what it cannot: the server and the state it is in, the tier as a
- * sentence, the two counter readings, and then the host's own answer about the
- * definition — its model-facing description verbatim, the fields it accepts, and
- * the reason a hidden name is not in the request. Empty groups are not printed,
- * which is this file's rule everywhere: no fields, no field list.
+ * A row that reads a host shows the full registry name, then one fact line —
+ * the serving server with its state, the tier as a sentence, the step and the
+ * clock, each only while the host published it — then the two counter readings,
+ * and then the host's own answer about the definition: its model-facing
+ * description verbatim, the fields it accepts, and the reason a hidden name is
+ * not in the request. Empty groups are not printed, which is this file's rule
+ * everywhere: no fields, no field list.
  *
- * The reason leads the block for a **hidden** row: there, it is the answer to the
- * question the reader opened the row with, while for an offered name the same
- * block is a definition rather than an apology.
+ * A row composed without a route (a unit test's own row, a surface that never
+ * read a host) has no address to ask and no declared rows to name: its body is
+ * the read's own line alone, never a name and a fact line the block would then
+ * have to invent.
+ *
+ * The reason leads the definition for a **hidden** row: there, it is the answer
+ * to the question the reader opened the row with, while for an offered name the
+ * same block is a definition rather than an apology.
  * @param name - the registry name on the row.
  * @param detail - the tier, the disclosure state and the session's own rows.
  * @param view - what the cache holds for this name right now.
@@ -2775,45 +2828,35 @@ export function toolFactsBody(
   view: ToolFactsView,
   t: Translate,
 ): ReactNode {
-  if (view.state === 'loading') return h('div', { style: STYLE.dim }, t('toolLoading'))
-  if (view.state === 'failure') return h('div', { style: STYLE.dim }, t('toolFailed'))
-  const facts = view.facts
-  if (facts === undefined) return null
-  const reason = toolReasonLine(toolReasonOf(name, facts), t)
-  const reasonLine = reason === undefined ? null : h('div', { style: STYLE.muted }, reason)
-  const description =
-    facts.description === undefined
-      ? null
-      : // The host's own model-facing text, exactly as it arrived: not
-        // translated, not shortened, and not passed through a dictionary.
-        h('div', { style: STYLE.detail }, facts.description)
-  const title = facts.description === undefined ? name : `${name} — ${facts.description}`
-  const fields =
-    facts.fields.length === 0
-      ? null
-      : [
-          h('div', { key: 'fields', style: STYLE.group }, t('toolFieldsLabel')),
-          ...facts.fields.map((field, index) => fieldLine(field, index, t)),
-        ]
-  const server = toolServerState(name, detail.rows, t)
+  const read = toolFactsReadLine(view, t)
+  if (detail.projectRoot === undefined || detail.sessionId === undefined) return read
+  const facts = view.state === 'facts' ? view.facts : undefined
   const calls = toolCallsLine(detail.calls, t)
-  // Every group is drawn only while it has something to say: a fact the host did
-  // not publish gets no line at all, not an empty one.
-  const lines: ReactNode[] = [
-    ...(server === undefined ? [] : [h('div', { key: 'server', style: STYLE.muted }, server)]),
-    ...(calls === undefined ? [] : [h('div', { key: 'calls', style: STYLE.muted }, calls)]),
-  ]
+  const reason = facts === undefined ? undefined : toolReasonLine(toolReasonOf(name, facts), t)
+  const fieldsLabel = t('toolFieldsLabel')
   return [
+    h('div', { key: 'name', style: STYLE.name }, name),
+    h('div', { key: 'facts', style: STYLE.detail }, toolFactsLine(name, detail, t)),
+    ...(calls === undefined ? [] : [h('div', { key: 'calls', style: STYLE.muted }, calls)]),
     // The reason leads a hidden row's body: there it is the answer to the
     // question the reader opened the row with, while for an offered name the same
     // block is a definition rather than an apology.
-    ...(detail.via === 'pin' ? [reasonLine] : []),
-    h('div', { key: 'tier', style: STYLE.muted }, toolTierSentence(detail.via, t)),
-    ...lines,
-    description,
-    ...(detail.via === 'pin' ? [] : [reasonLine]),
-    fields,
-  ].filter((line): line is Exclude<ReactNode, null> => line !== null)
+    ...(reason === undefined ? [] : [h('div', { key: 'reason', style: STYLE.muted }, reason)]),
+    read,
+    ...(facts?.description === undefined
+      ? []
+      : [
+          // The host's own model-facing text, exactly as it arrived: not
+          // translated, not shortened, and not passed through a dictionary.
+          h('div', { key: 'description', style: STYLE.detail }, facts.description),
+        ]),
+    ...(facts === undefined || facts.fields.length === 0
+      ? []
+      : [
+          h('div', { key: 'fields', style: STYLE.group }, fieldsLabel),
+          ...facts.fields.map((field, index) => fieldLine(field, index, t)),
+        ]),
+  ]
 }
 
 /**
@@ -2893,11 +2936,11 @@ export function toolRow(
       ? h(
           'div',
           { style: STYLE.toolDetail },
-          // What the header cannot hold (F-56). The name, the clock and the step
-          // are **not** repeated here — the header is where the reader already
-          // read them, and printing them twice was the copy this unit removed.
-          // Everything below the tier is the host's own answer, read once, on
-          // demand, while this row is the one that is open.
+          // What the header cannot hold (F-56): the full registry name, the fact
+          // line — the server with its state, the tier as a sentence, the step and
+          // the clock only while the host published them — the counter readings
+          // apart, and then the host's own answer about the definition, read once,
+          // on demand, while this row is the one that is open.
           facts,
         )
       : null,

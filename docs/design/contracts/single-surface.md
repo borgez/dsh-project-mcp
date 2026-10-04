@@ -55,17 +55,28 @@ The tool row today is a `div`. It becomes a `button` with `aria-expanded`:
   gave them, the pin action — as now;
 - **the body** (at `aria-expanded="true"`):
   - the full public name in mono: `mcp__<server>__<tool>` (this is `OfferedTool.name`);
-  - the server the tool came from (by the `mcp__<server>__` prefix);
+  - the server the tool came from (by the `mcp__<server>__` prefix), carrying the state the
+    session's own `ServerRow` publishes for that server when it declares one;
   - the tier by which the tool entered the request: pinning / activation by the session
     (`via: 'session'`) / context ranking (`via: 'context'`);
   - the step (`OfferedTool.step`) and the time (`OfferedTool.at`) — only when the host published
-    them; no number — no line, invented "step 4"s do not exist.
+    them; no number — no line, invented "step 4"s do not exist;
+  - since F-56, the two counter readings apart (`{n} in the project` · `{n} in this session`,
+    only the figures the host recorded), and the host's own answer about the definition, read
+    once per opened row over `GET <prefix>/tool` — the `description` verbatim, the accepted
+    fields, and the reason a name the request does not offer is missing, which leads the block for
+    a hidden row. The read draws one muted line while it is in flight and one when the host
+    refused or answered with something that is not a record.
 
 **About the estimate.** The host does not publish a "size of exactly this tool" field:
 `SessionTools` carries `surfaceChars` / `visibleChars` / `deferredChars` for the whole set, and
 `OfferedTool` — only the name, the tier, the step and the time. So a tool's disclosure prints what
 is its own (name, server, tier, step, time), and the estimate stays where it is real — in the
-group's budget line. Inventing a per-tool number is not allowed: those are exactly the fields
+group's budget line. The one per-tool figure that may be printed is the host's own measurement of
+a **hidden** name's definition, inside the reason the `GET tool` answer carries
+(`{ kind: 'budget', chars, budget, used }`, all measured by `runtime.ts` — `schemaChars` of that
+definition, the session's `budgetChars` and `visibleChars`): the panel reports the host's number,
+it never computes one. Inventing a per-tool number is not allowed: those are exactly the fields
 F-11/F-12 removed from the panel. If a real per-tool estimate is ever needed, that is a host
 change and a separate unit of work, not client arithmetic.
 

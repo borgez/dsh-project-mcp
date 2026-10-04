@@ -2046,12 +2046,12 @@ mcp__grafana-local__query       step 3</pre>
         <tr>
           <td>The block scheme and the copy</td>
           <td>brought to one scheme (this is a design)</td>
-          <td>the product still prints the old strings: the session summary twice, the tool name both in the row and in its expansion, extra labels. The mock's fix runs ahead of the code fix — the divergence is closed in the next step, together with the <code>src/client/view.ts</code> fix. The zeroes are agreed: the header counters are chips, and an empty tier is drawn neither as a heading nor as a row (F-37)</td>
+          <td>the product still prints the old strings: the session summary twice, extra labels. The tool name in the row <em>and</em> in its expansion is the one divergence deliberately kept open: F-56 left the product printing the full <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> (and the step and the clock) inside the open disclosure, because <code>contracts/surfaces.md</code> §1.5 and <code>scripts/design-parity.mjs</code>'s own probe read the full name out of that body — this file's <code>tool-detail</code> draws only the tier line there. Settling it one way is parked in <code>docs/features.md</code> (an <code>idea</code> row). The zeroes are agreed: the header counters are chips, and an empty tier is drawn neither as a heading nor as a row (F-37)</td>
         </tr>
         <tr>
-          <td>The rows of the <code>hidden</code> tier (F-40)</td>
+          <td>The rows of the <code>hidden</code> tier (F-40, closed by F-56)</td>
           <td>a disclosure heading <code>▸ hidden</code> with a chip, under it the names as rows without a second level (<code>tool-line static</code>), like the pinned and counter ones</td>
-          <td>the product draws the same tier as a disclosure and the same list, but makes a name row an expanding button with <code>aria-expanded="false"</code> and the hint "show this tool’s registry name and how it was offered", with nothing to expand (<code>onToggle</code> is a stub): a press does nothing while the hint promises an expansion. Awaiting the <code>src/client/view.ts</code> fix — an idea in <code>docs/features.md</code></td>
+          <td>the product draws the same tier as a disclosure, but every name row is an expanding button with <code>aria-expanded</code> and a body to open: since F-56 the hidden row's disclosure answers with the host's own reason it is not in the request (and the definition), so the press no longer promises an expansion that does nothing. This file keeps the <code>static</code> drawing until it is ported</td>
         </tr>
         <tr>
           <td>Tokens</td>

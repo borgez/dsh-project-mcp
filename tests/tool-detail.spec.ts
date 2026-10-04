@@ -39,7 +39,7 @@ import type { ProjectMcpService } from '../src/index.ts'
 import { ROUTE_PREFIX } from '../src/shared.ts'
 import type { ToolFacts } from '../src/types.ts'
 import { createRouteHandler } from '../src/ui.ts'
-import { fakeScopes } from './helpers/scopes.ts'
+import { chainSchemas, fakeScopes } from './helpers/scopes.ts'
 import type { FakeScopes } from './helpers/scopes.ts'
 
 const created: string[] = []
@@ -204,13 +204,14 @@ function harness(
   const host = {
     logger: { debug: () => undefined, info: () => undefined, warn: () => undefined },
     get: () => undefined,
-    // The registry's scoped lookup, as the real one resolves a key: the key's
-    // own double, and the profile plane it carries for a session key.
+    // The registry's scoped lookup, as the real one resolves a session key: the
+    // whole scope chain merged, nearest scope first, so the definitions a mount
+    // published on the project scope are what the session's catalog holds.
     tools: {
-      schemas: (key?: object): ToolSchemaLike[] => {
-        const double = key === undefined ? undefined : scopes.doubleOf(key)
-        return key !== undefined && double === undefined ? [] : (double?.tools.schemas() ?? [])
-      },
+      schemas: (key?: object): ToolSchemaLike[] =>
+        key === undefined
+          ? []
+          : chainSchemas(scopes.chainOf(key), (double) => double.tools.schemas()),
     },
     // One of the doubles the scope factory minted holds this call: the runtime
     // starts a mount through the scope context it just created, so the
@@ -440,7 +441,6 @@ describe('GET tool — the host read', () => {
       parameters: QUERY_SCHEMA,
     }
 
-    console.log('DBGROW', JSON.stringify(runtime.snapshot().projects[0]?.sessions[0]?.tools))
     const facts = factsOf(runtime, project.root, 'session-1', 'mcp__db__query')
 
     // Every figure is the host's own measurement: the definition's serialized

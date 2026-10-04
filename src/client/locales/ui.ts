@@ -140,7 +140,9 @@ export const zh: Record<UiKey, string> = {
   idleMinute: '闲置 {count} 分钟',
   // One tool row's detail block (F-56): the serving server with its state, the
   // tier as a sentence, the two counter readings, then the host's own answer
-  // about the definition. The name, the clock and the step stay in the header.
+  // about the definition. The header keeps the name, the clock and the step, and the
+  // body prints them again in its fact line: that is what the contract's own probe reads
+  // out of the open disclosure (`contracts/surfaces.md` §1.5).
   toolServer: '服务器 {server}',
   toolServerState: '{server} · {state}',
   toolTierPinned: '已置顶 — 始终在请求中',
@@ -563,7 +565,9 @@ export const ru: Record<UiKey, string> = {
   idleMinute: 'простой {count}мин',
   // One tool row's detail block (F-56): the serving server with its state, the
   // tier as a sentence, the two counter readings, then the host's own answer
-  // about the definition. The name, the clock and the step stay in the header.
+  // about the definition. The header keeps the name, the clock and the step, and the
+  // body prints them again in its fact line: that is what the contract's own probe reads
+  // out of the open disclosure (`contracts/surfaces.md` §1.5).
   toolServer: 'сервер {server}',
   toolServerState: '{server} · {state}',
   toolTierPinned: 'закреплён — всегда в запросе',

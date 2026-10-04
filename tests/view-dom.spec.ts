@@ -926,14 +926,22 @@ describe('the sidebar panel', () => {
     // block does hold are the tier chips of its filter, none of them applied.
     expect(applied(open)).toEqual([])
 
-    // The row's own action stays beside the line and still writes the pin.
+    // Opening a row reads its definition over the contract's `GET tool` (F-56):
+    // one call per opened row, so the block asks the host for exactly the one
+    // name the reader unfolded.
+    const read = calls.find((call) => call.url.startsWith(`${ROUTE_PREFIX}/${ROUTE_ACTIONS.tool}?`))
+    expect(read?.init).toBeUndefined()
+
+    // The row's own action stays beside the line and still writes the pin. The
+    // write is found by its route rather than by position: the definition read
+    // above is a call of its own now, so the pin is no longer the second one.
     click(open, t('toolsUnpin'))
     expect(button(view.rerender(), t('toolsUnpin'))?.props.disabled).toBe(true)
     await settle()
     expect(button(view.rerender(), t('toolsUnpin'))?.props.disabled).toBe(false)
 
-    expect(calls[1]?.url).toBe(`${ROUTE_PREFIX}/${ROUTE_ACTIONS.pin}`)
-    expect(calls[1]?.init).toEqual({
+    const pin = calls.find((call) => call.url === `${ROUTE_PREFIX}/${ROUTE_ACTIONS.pin}`)
+    expect(pin?.init).toEqual({
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

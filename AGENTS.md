@@ -131,7 +131,9 @@ Four consequences worth knowing:
   repository and that workflow file on npmjs.com), so nothing has to be rotated and nothing
   expires. No `NODE_AUTH_TOKEN` may be set: it takes precedence over the exchange, which is how
   a dead registry token once surfaced as a masked `404` on the PUT — indistinguishable from a
-  permissions problem. That job pins Node 24, because the exchange needs npm ≥ 11.5.1, and
+  permissions problem. That job pins Node 24, because the exchange needs npm ≥ 11.5.1, and the
+  publisher is the **npm CLI**: the pnpm 10 line implements no trusted publishing at all, so
+  `pnpm publish` there sends the PUT unauthenticated and the registry masks it as the same 404.
   `release.yml`'s calling job has to grant `id-token: write` too: a reusable workflow never holds
   more than its caller gives.
 

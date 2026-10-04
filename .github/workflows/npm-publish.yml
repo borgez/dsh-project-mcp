@@ -12,7 +12,8 @@
 # which is how the `v0.2.1` release once published `0.2.0` from a manifest that
 # had never been bumped.
 #
-# `pnpm publish` is the only step that talks to the registry, and it is preceded
+# `npm publish` is the only step that talks to the registry — the npm CLI is what
+# performs the trusted-publishing exchange, and pnpm 10 implements none of it — preceded
 # by two gates: `pnpm check` (typecheck, build, tests under coverage, resource
 # audit) and a look inside the tarball itself. The tarball gate exists because
 # the gate that builds and the job that publishes are not the same checkout
@@ -106,9 +107,11 @@ jobs:
 
       # No `NODE_AUTH_TOKEN`: the credential comes from the `id-token: write`
       # above, exchanged with the trusted publisher registered for this workflow
-      # on npmjs.com. pnpm 10 publishes through it natively.
+      # on npmjs.com. The publisher is the npm CLI, not `pnpm publish`: the pnpm
+      # 10 line carries no trusted-publishing code at all, so it would send the
+      # PUT unauthenticated and the registry would mask that as a 404.
       - name: Publish to npm
-        run: pnpm publish --no-git-checks
+        run: npm publish
 
       - name: The registry serves the version this run published
         run: |

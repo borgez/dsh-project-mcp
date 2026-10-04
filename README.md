@@ -909,7 +909,9 @@ The publish credential is an **OIDC token**, not a repository secret: the job as
 `id-token: write` and exchanges it with npm's trusted publishing (registered for this
 repository and `npm-publish.yml` on npmjs.com), so nothing has to be rotated and a
 stale `NODE_AUTH_TOKEN` must not be set — it would take precedence over the exchange.
-That job pins Node 24, because the exchange needs npm ≥ 11.5.1.
+That job pins Node 24, because the exchange needs npm ≥ 11.5.1 and is performed by the
+**npm CLI**: the pnpm 10 line has no trusted-publishing support, so `pnpm publish` there
+would send the PUT unauthenticated and the registry would mask that as a `404`.
 
 ## Limitations
 

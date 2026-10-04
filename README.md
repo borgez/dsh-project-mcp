@@ -905,6 +905,12 @@ job fails loudly when the two disagree. `pnpm pack` builds by itself (`prepack`)
 hand-made tarball cannot ship the package without its `lib/` — the shape the published
 `0.2.0` had.
 
+The publish credential is an **OIDC token**, not a repository secret: the job asks for
+`id-token: write` and exchanges it with npm's trusted publishing (registered for this
+repository and `npm-publish.yml` on npmjs.com), so nothing has to be rotated and a
+stale `NODE_AUTH_TOKEN` must not be set — it would take precedence over the exchange.
+That job pins Node 24, because the exchange needs npm ≥ 11.5.1.
+
 ## Limitations
 
 - Per-project cost: one MCP instance per project per server, shared by every

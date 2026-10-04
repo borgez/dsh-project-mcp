@@ -116,7 +116,7 @@ as `release: dsh-project-mcp <version>`, tags `v<version>`, creates the GitHub R
 created with the workflow's own `GITHUB_TOKEN` starts no other run — the `release:` trigger would
 never fire for it.
 
-Three consequences worth knowing:
+Four consequences worth knowing:
 
 - **A green `feat`/`fix` on `main` publishes within the minute.** A change that must not ship
   yet does not belong on `main`.
@@ -126,6 +126,14 @@ Three consequences worth knowing:
 - **`pnpm pack` builds by itself** (`prepack`), so a tarball always carries `lib/` and
   `cordis.patch.yml` — the manifest's own promises, checked inside the tarball before every
   publish, and by hand in `pnpm pack`.
+- **The publish credential is OIDC, not a secret.** `npm-publish.yml` asks for
+  `id-token: write` and exchanges it through npm's trusted publishing (registered for this
+  repository and that workflow file on npmjs.com), so nothing has to be rotated and nothing
+  expires. No `NODE_AUTH_TOKEN` may be set: it takes precedence over the exchange, which is how
+  a dead registry token once surfaced as a masked `404` on the PUT — indistinguishable from a
+  permissions problem. That job pins Node 24, because the exchange needs npm ≥ 11.5.1, and
+  `release.yml`'s calling job has to grant `id-token: write` too: a reusable workflow never holds
+  more than its caller gives.
 
 Publishing by hand stays available as the escape hatch: create a GitHub Release for a tag whose
 `package.json` already carries that version, and `npm-publish.yml` publishes it — failing when

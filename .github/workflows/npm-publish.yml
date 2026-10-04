@@ -32,8 +32,15 @@ on:
         default: ''
         type: string
 
+# Trusted publishing: the job mints an OIDC token and exchanges it with npm for a
+# short-lived publish credential, so no long-lived registry secret exists to
+# expire. `id-token: write` is what makes the token available, and a
+# `NODE_AUTH_TOKEN` in the environment would take precedence over the exchange —
+# the stale one this repository carried turned a dead credential into a masked
+# `404` on the PUT, indistinguishable from a permission problem.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -57,7 +64,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # 24 for npm 11: the CLI that exchanges the OIDC token (needs >= 11.5.1).
+          node-version: 24
           registry-url: https://registry.npmjs.org/
           cache: pnpm
 
@@ -96,10 +104,11 @@ jobs:
           done
           echo "$tarball carries $(wc -l <<< "$contents") entries"
 
+      # No `NODE_AUTH_TOKEN`: the credential comes from the `id-token: write`
+      # above, exchanged with the trusted publisher registered for this workflow
+      # on npmjs.com. pnpm 10 publishes through it natively.
       - name: Publish to npm
         run: pnpm publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: The registry serves the version this run published
         run: |

@@ -1,7 +1,7 @@
 {
   "name": "dsh-project-mcp",
   "description": "Per-project MCP servers for DeepSeek Harness: mounts the MCP servers a project declares into the sessions working in it",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

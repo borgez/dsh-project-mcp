@@ -796,7 +796,7 @@ check passes on both:
 | 600 unrelated writes (`node_modules`, `dist`, `.git`) | 3 watch events → 1 pass, 0 catalog scans, 0 remounts |
 | mount → dispose | MCP child process exits, its pid file is removed |
 | server that cannot start | one detailed `error` row, no respawn storm, no leaked child |
-| 10 × session create/dispose | 0 surviving children, file descriptors flat, heap +0.9 MB |
+| 10 × session create/dispose | 0 surviving children, file descriptors flat, heap +0.3 MB (settled: read after a collection; a runtime exposing no collector reads raw under the same 8 MB budget) |
 | two sessions, one project | 1 mount attempt, 1 child, 1 creation line — the second session's turn reuses it |
 | a release while another session holds | child stays up for the remaining holder, goes down with the last one |
 | teardown | watchers closed, descriptors released, 0 passes and ~1 ms CPU afterwards |

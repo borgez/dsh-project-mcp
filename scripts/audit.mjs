@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
+import { setFlagsFromString } from 'node:v8'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { ProjectMcpRuntime } from '../lib/index.js'
@@ -51,6 +53,37 @@ function fdCount() {
 function cpuMs() {
   const usage = process.cpuUsage()
   return (usage.user + usage.system) / 1000
+}
+
+/**
+ * Settle the heap, so a memory reading is *retained* memory rather than
+ * whatever the collector has not swept yet.
+ *
+ * The audit is invoked as a plain `node scripts/audit.mjs` (that is what
+ * `pnpm check` runs), so `--expose-gc` is not on the command line: the flag is
+ * flipped for the length of one `vm` context, which is the standard way to
+ * reach the real collector from a running script. `heapUsed` read between
+ * collections carries transient garbage — on an ubuntu runner's Node 24 that
+ * alone read past the budget once the rest of the audit had warmed the process
+ * — and garbage is not a leak; what survives the cycles is.
+ *
+ * A runtime that refuses the flag (Bun, a frozen embedder) simply leaves the
+ * reading raw: the budget below still covers that case, it is only less
+ * sensitive. The only effect here is a collection — nothing is written.
+ * @returns `true` when a collection ran.
+ */
+function collect() {
+  try {
+    setFlagsFromString('--expose-gc')
+    const gc = runInNewContext('gc')
+    setFlagsFromString('--no-expose-gc')
+    if (typeof gc !== 'function') return false
+    gc()
+    gc()
+    return true
+  } catch {
+    return false
+  }
 }
 
 function alive(pid) {
@@ -528,6 +561,9 @@ async function sectionAgentChurn() {
 
   const cycles = 10
   const seen = new Set()
+  // Both readings are settled: a number taken between collections measures the
+  // garbage the cycles happened to leave behind, not what the runtime retained.
+  const settled = collect()
   const heapBefore = process.memoryUsage().heapUsed
   const fdBefore = fdCount()
   for (let index = 0; index < cycles; index += 1) {
@@ -543,6 +579,7 @@ async function sectionAgentChurn() {
     await waitFor(() => !existsSync(pidPath), 5_000)
   }
   await sleep(700)
+  collect()
 
   const leaked = [...seen].filter((pid) => alive(pid))
   const report = {
@@ -550,13 +587,18 @@ async function sectionAgentChurn() {
     childrenSpawned: seen.size,
     childrenStillAlive: leaked.length,
     heapGrowthMb: Number(((process.memoryUsage().heapUsed - heapBefore) / 1024 / 1024).toFixed(2)),
+    heapSettled: settled,
     fdBefore,
     fdAfter: fdCount(),
     projectsAfter: runtime.snapshot().projects.length,
   }
   check('agent churn: every spawned child exited', leaked.length === 0, `${seen.size} spawned, ${leaked.length} alive`)
   check('agent churn: no fd growth', fdBefore < 0 || report.fdAfter - fdBefore <= 4, `${fdBefore} -> ${report.fdAfter}`)
-  check('agent churn: bounded heap growth', report.heapGrowthMb < 8, `${report.heapGrowthMb} MB / ${cycles} cycles`)
+  check(
+    'agent churn: bounded heap growth',
+    report.heapGrowthMb < 8,
+    `${report.heapGrowthMb} MB / ${cycles} cycles${settled ? '' : ' (unsettled heap: no collector available)'}`,
+  )
   check('agent churn: no state left behind', report.projectsAfter === 0)
   await runtime.disposeAll()
   return report

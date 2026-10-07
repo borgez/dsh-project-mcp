@@ -32,6 +32,19 @@ on:
         required: false
         default: ''
         type: string
+  # The third entry point exists because a publish that died after its tag and
+  # Release were cut has no other replay: the `release:` trigger stays silent for
+  # a Release the release job created with its own `GITHUB_TOKEN`, and a fresh
+  # push would either ask for a version the manifest already carries or cut a
+  # second tag for a publish that never landed. It also lets the workflow be run
+  # on its own while a trusted-publisher configuration is being settled.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git tag to publish; empty publishes the manifest's version unverified against a tag
+        required: false
+        default: ''
+        type: string
 
 # Trusted publishing: the job mints an OIDC token and exchanges it with npm for a
 # short-lived publish credential, so no long-lived registry secret exists to
@@ -105,13 +118,66 @@ jobs:
           done
           echo "$tarball carries $(wc -l <<< "$contents") entries"
 
+      # A rejected trusted publisher, a missing one, and one that allows staging
+      # but not publishing all reach the PUT as the same masked `404`, and npm's
+      # own troubleshooting lists no order between them. So ask the registry the
+      # question the CLI asks — the token exchange, with npm's audience — and
+      # print the claims it matched the answer against: a 2xx here with a still
+      # failing publish narrows the cause to the configuration's allowed actions,
+      # while a 401/404 names the mismatch while the values it should have named
+      # are still on screen. The exchange response is a credential and is never
+      # printed; the claims are not.
+      - name: Trusted publishing — the claims this run offers the registry
+        run: |
+          set -euo pipefail
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+            echo "::error::no OIDC request URL in the environment — the job lacks id-token: write"
+            exit 1
+          fi
+          token="$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" | jq -r .value)"
+          claims="$(node -e 'process.stdout.write(Buffer.from(process.argv[1].split(".")[1], "base64url").toString())' "$token")"
+          jq '{sub, repository, workflow_ref, job_workflow_ref, ref, environment}' <<< "$claims"
+          file="$(jq -r '.job_workflow_ref // ""' <<< "$claims" | sed -E 's#.*/\.github/workflows/##; s/@.*//')"
+          echo "::notice::this run offers repository=${{ github.repository }} workflow-file=${file:-unknown} environment=$(jq -r '.environment // "none"' <<< "$claims")"
+          status="$(curl -sS -o "$RUNNER_TEMP/exchange.json" -w '%{http_code}' \
+            -X POST "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/dsh-project-mcp" \
+            -H "Authorization: Bearer $token")"
+          if [[ "$status" == 2* ]]; then
+            echo "::notice::the registry exchanged this run's token (HTTP $status), so the configured trusted publisher matches these claims — a publish that still fails is the configuration's allowed actions: add 'npm publish' (npm trust github dsh-project-mcp --file ${file:-npm-publish.yml} --repo ${{ github.repository }} --allow-publish)"
+            exit 0
+          fi
+          echo "::error::the registry refused this run's token exchange (HTTP $status) — register these exact values, or: npm trust github dsh-project-mcp --file ${file:-npm-publish.yml} --repo ${{ github.repository }} --allow-publish"
+          cat "$RUNNER_TEMP/exchange.json" 2> /dev/null || true
+          exit 1
+
       # No `NODE_AUTH_TOKEN`: the credential comes from the `id-token: write`
       # above, exchanged with the trusted publisher registered for this workflow
       # on npmjs.com. The publisher is the npm CLI, not `pnpm publish`: the pnpm
       # 10 line carries no trusted-publishing code at all, so it would send the
       # PUT unauthenticated and the registry would mask that as a 404.
+      #
+      # The refusals below are the ones this pipeline has actually met. Each is
+      # terse and two of them look alike — a masked `404` for "no credential", a
+      # `403` naming an action, a `409` naming a version — so each one prints the
+      # fix that applies before the step ends, instead of leaving the next person
+      # to rediscover which of the several requirements is wrong.
       - name: Publish to npm
-        run: npm publish
+        run: |
+          set -uo pipefail
+          log="$(mktemp)"
+          if npm publish 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          code="${PIPESTATUS[0]}"
+          if grep -q 'OIDC permission denied for this action' "$log"; then
+            echo "::error::the trusted publisher for this package does not allow npm publish — enable that action on npmjs.com, or with the npm 12 CLI (npm trust github <pkg> --file npm-publish.yml --allow-publish); staging instead is a deliberate choice, not this pipeline's"
+          elif grep -q 'Cannot publish over previously staged version' "$log"; then
+            echo "::error::this version is already staged on npm — approve or reject it before re-running this release (npm 12: npm stage list <pkg>, then npm stage approve|reject <stage-id>; the npm 11 line has no stage command at all, and the web UI shows the same list)"
+          elif grep -qE 'E404|Not Found - PUT' "$log"; then
+            echo "::error::the registry answered 404 on the PUT, which is what an unauthenticated or unauthorized request looks like — check for a stale NODE_AUTH_TOKEN and that the trusted publisher names this repository, the workflow file npm-publish.yml and no environment"
+          fi
+          exit "$code"
 
       - name: The registry serves the version this run published
         run: |

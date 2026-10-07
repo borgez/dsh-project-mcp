@@ -1272,6 +1272,43 @@ describe('ProjectMcpRuntime', () => {
     await runtime.disposeAll()
   })
 
+  it('keeps the step record of a called tool through compaction and drops the ended offer', async () => {
+    const project = makeProject({ alpha: { command: 'npx' }, beta: { command: 'npx' } })
+    const { runtime } = harness([], { activationToolBudgetChars: 0 })
+    const { agent, ctx } = fakeAgent('session-1', project.session)
+    const scope = new FakeScope([agent])
+    runtime.attach(scope)
+
+    await scope.step(agent)
+    await waitFor(() => runtime.snapshot().projects[0]?.rows[0]?.status === 'active')
+
+    // Two offers are recorded during step two by the two searches, and the model
+    // calls one of them. The call goes in through the runtime's own API; the
+    // `tools/result` wrapper that forwards `exec.name`/`exec.agent?.id` to it is
+    // pinned separately, in `tests/entry.spec.ts`.
+    await scope.step(agent)
+    await ctx.callTool(SEARCH_TOOL_NAME, { query: 'alpha' })
+    await ctx.callTool(SEARCH_TOOL_NAME, { query: 'beta' })
+    runtime.noteToolUse('session-1', 'mcp__alpha__tool')
+
+    for (const listener of ctx.listeners.get('session/event') ?? []) {
+      void (listener as unknown as (session: unknown, event: unknown) => void)(
+        {},
+        { type: 'compaction/end' },
+      )
+    }
+
+    const after = runtime.snapshot().projects[0]?.sessions[0]?.tools
+    // A record belongs to the offer it was made for: the one that ended took its
+    // record with it, while the offer the session kept still carries step two
+    // instead of losing the tag a whole-map clear would have cost it.
+    expect(after?.activated).toEqual([
+      { name: 'mcp__alpha__tool', via: 'session', at: expect.any(Number), step: 2 },
+    ])
+    expect(after?.deferred).toEqual(['mcp__beta__tool'])
+    await runtime.disposeAll()
+  })
+
   it('splits the mounted surface into offered and deferred characters', async () => {
     const project = makeProject({ alpha: { command: 'npx' } })
     const { runtime } = harness([], { activationToolBudgetChars: 0 })

@@ -5,17 +5,20 @@
  * every tool the project owns. This module keeps the *presentation* list small
  * without touching the registry:
  *
- * - the usage counters seed a **baseline** of tools the project actually calls
- *   ({@link seedFromUsage}) — they are offered directly from the first step on;
+ * - the usage counters seed a **baseline** of tools the project has called — one
+ *   call is enough ({@link seedFromUsage}) — and they are offered directly from
+ *   the first step on;
  * - the newest task text ranks the project's mounted tools with BM25, and the
  *   best matches are offered through a **sticky window** that holds one offered
- *   set across several steps ({@link advanceAutoOffer});
+ *   set across the session's steps ({@link advanceAutoOffer});
  * - the rest are discovered through the `mcp_search_tools` tool this module
  *   registers in the agent scope, which **activates** the matches for the next
  *   step ({@link activate});
- * - a tool that is never called falls out again ({@link pruneIdle}), and a
- *   compaction ends the session's activations while the counter baseline stays
- *   ({@link onCompaction});
+ * - a compaction ends the session's activations that no call backs, while the
+ *   ones the model really called and the counter baseline stay
+ *   ({@link onCompaction}); idle pruning ({@link pruneIdle}) stays available
+ *   through a positive `toolIdleMs`, and the shipped `0` leaves it off, so the
+ *   compaction boundary is the one place that shrinks the offered set;
  * - the agent's own `system-prompt/assemble` listener puts the active schemas
  *   back into the assembled request ({@link withActiveTools}).
  *
@@ -39,14 +42,30 @@ import type { OfferedTool, ServerUsage, SessionTools, ToolPolicy } from './types
 /** `true` while the session may offer MCP tools through search + activation. */
 export const DEFAULT_ACTIVATION_ENABLED = true
 
-/** Tools seeded into the baseline from the durable counters. */
-export const DEFAULT_ACTIVATION_SEEDED = 8
+/**
+ * Tools seeded into the baseline from the durable counters. A project with a
+ * few dozen mounted tools calls more than a handful of them, so the cap sits
+ * above the narrow window that used to evict a tool the project really uses.
+ */
+export const DEFAULT_ACTIVATION_SEEDED = 16
 
-/** Calls one tool needs in the counters before it is seeded. */
-export const DEFAULT_ACTIVATION_MIN_CALLS = 5
+/**
+ * Calls one tool needs in the counters before it is seeded. One call is enough:
+ * a tool the project actually uses enters the durable baseline the first time it
+ * is called, so the baseline grows from real usage instead of waiting for the
+ * counters to reach an arbitrary threshold.
+ */
+export const DEFAULT_ACTIVATION_MIN_CALLS = 1
 
-/** How long a session-activated tool survives without a call (`0` disables). */
-export const DEFAULT_TOOL_IDLE_MS = 1_800_000
+/**
+ * How long a session-activated tool survives without a call (`0` disables).
+ *
+ * The shipped `0` keeps a searched tool offered for the rest of the session:
+ * dropping it mid-session shrinks the request and rewrites the prompt prefix,
+ * which invalidates the provider's prefix cache, so time-based removal stays an
+ * explicit opt-in.
+ */
+export const DEFAULT_TOOL_IDLE_MS = 0
 
 /** Matches one `mcp_search_tools` call activates when it omits `limit`. */
 export const DEFAULT_SEARCH_LIMIT = 8
@@ -80,11 +99,15 @@ export const MAX_AUTO_ACTIVATION_LIMIT = 50
  * Extra user messages a context-driven offer survives after the one that ranked
  * it; `0` keeps only that message. The offering set is recomputed when the task
  * context moves, so this is what holds one tool list across several steps.
+ *
+ * The shipped window spans a whole session: dropping an offer mid-session
+ * rewrites the prompt prefix and invalidates the provider's prefix cache, so the
+ * context tier grows and only resets at a compaction.
  */
-export const DEFAULT_AUTO_ACTIVATION_STICKY_STEPS = 2
+export const DEFAULT_AUTO_ACTIVATION_STICKY_STEPS = 100
 
 /** Hard cap on the sticky window, however the config asks for more. */
-export const MAX_AUTO_ACTIVATION_STICKY_STEPS = 20
+export const MAX_AUTO_ACTIVATION_STICKY_STEPS = 1000
 
 /**
  * Serialized size of the MCP surface a session may offer directly before this
@@ -241,24 +264,39 @@ export interface SessionEventLike {
  * One session's activation state.
  *
  * `baseline` is the counter-seeded set and outlives a compaction; `active` holds
- * the names this session activated through search, each with the epoch
- * milliseconds of its last touch, and is what idle pruning and compaction clear.
- * Both are read-only because every transition returns a new state.
+ * the names this session activated through search or the context tier, each with
+ * the epoch milliseconds of its last touch, and is what idle pruning and
+ * compaction trim. `used` records the calls the session made for this plugin's
+ * own namespace — the evidence a compaction keeps an activation by, because a
+ * tool the model called is one the session really uses. It is cumulative for the
+ * session and never bounded, so the compaction boundary shrinks the offers no
+ * call backs and never shrinks a used tool again.
+ *
+ * Every field is read-only because every transition returns a new state.
  */
 export interface ActivationState {
   /** Public names the durable counters proved hot; always offered. */
   readonly baseline: ReadonlySet<string>
   /** Session-activated public names mapped to their last touch. */
   readonly active: ReadonlyMap<string, number>
+  /**
+   * `mcp__` names this session called at least once and the durable baseline
+   * does not already keep. Read by nothing but {@link onCompaction}, and
+   * cumulative for the session: it is deliberately never bounded, so with the
+   * shipped `DEFAULT_TOOL_IDLE_MS` of `0` nothing else removes a name and a tool
+   * the session used stays offered for the rest of the session, across every
+   * further compaction.
+   */
+  readonly used: ReadonlySet<string>
 }
 
 /**
  * Build one session's state.
  * @param baseline - counter-seeded public names; defaults to none.
- * @returns an empty active set over that baseline.
+ * @returns an empty active set and an empty used record over that baseline.
  */
 export function createActivationState(baseline: Iterable<string> = []): ActivationState {
-  return { baseline: new Set(baseline), active: new Map() }
+  return { baseline: new Set(baseline), active: new Map(), used: new Set() }
 }
 
 /** How {@link seedFromUsage} reads the durable counters. */
@@ -324,13 +362,20 @@ export function activate(
     active ??= new Map(state.active)
     active.set(name, at)
   }
-  return active === undefined ? state : { baseline: state.baseline, active }
+  return active === undefined ? state : { baseline: state.baseline, active, used: state.used }
 }
 
 /**
- * Refresh the freshness of a tool the session actually called. A call is what
- * keeps a session-activated tool offered; a name that is not active (a baseline
- * tool, or a tool the model called by name without activating it) is untouched.
+ * Record a call — the freshness of a session-activated tool and the evidence a
+ * compaction keeps it by.
+ *
+ * `active` is refreshed exactly as before: a call is what keeps a
+ * session-activated tool offered. `used` records the call itself, but only for
+ * this plugin's own namespace: the core tools (`read`, `bash`, …) ride the same
+ * `tools/result` hook, and they are no part of a session's MCP activation state.
+ * A baseline name is not recorded either — the durable baseline already keeps it
+ * offered, so recording the call would only make a compaction look like it
+ * changed something.
  *
  * @param state - activation state before the call.
  * @param name - public name of the called tool.
@@ -339,16 +384,35 @@ export function activate(
  */
 export function noteUse(state: ActivationState, name: string, at: number): ActivationState {
   const previous = state.active.get(name)
-  if (previous === undefined || previous === at) return state
-  const active = new Map(state.active)
-  active.set(name, at)
-  return { baseline: state.baseline, active }
+  const refresh = previous !== undefined && previous !== at
+  // `used` post-dates the interface: a state an embedder built before the field
+  // existed reads as a session that has used nothing, so the read is optional
+  // and the write coalesces an empty record instead of throwing.
+  const already = state.used?.has(name) === true
+  const record = name.startsWith('mcp__') && !state.baseline.has(name) && !already
+  if (!refresh && !record) return state
+  const active = refresh ? new Map(state.active) : undefined
+  active?.set(name, at)
+  const used = record ? new Set(state.used ?? []) : undefined
+  used?.add(name)
+  return {
+    baseline: state.baseline,
+    active: active ?? state.active,
+    used: used ?? state.used ?? new Set(),
+  }
 }
 
 /**
  * Drop the session-activated tools that have not been called for `idleMs`.
  * The baseline is never pruned: it comes from the durable counters, not from the
  * session. `idleMs <= 0` disables pruning.
+ *
+ * A positive `idleMs` is an explicit opt-in to *forgetting*: an evicted name
+ * leaves the used record with the offer it was about, so the sweep is final —
+ * a later compaction cannot read the call back and resurrect what time already
+ * dropped. A name the model needs again is activated again through search. The
+ * names still inside the window keep their record, and a sweep that evicts
+ * nothing returns its input.
  *
  * @param state - activation state at `now`.
  * @param now - epoch milliseconds of the sweep.
@@ -358,23 +422,68 @@ export function noteUse(state: ActivationState, name: string, at: number): Activ
 export function pruneIdle(state: ActivationState, now: number, idleMs: number): ActivationState {
   if (idleMs <= 0 || state.active.size === 0) return state
   let active: Map<string, number> | undefined
+  let used: Set<string> | undefined
   for (const [name, at] of state.active) {
     if (now - at < idleMs) continue
     active ??= new Map(state.active)
     active.delete(name)
+    // `used` post-dates the interface, so a legacy state simply has no record to
+    // forget; a record that is there is copied before it is dropped.
+    if (state.used?.has(name) !== true) continue
+    used ??= new Set(state.used ?? [])
+    used.delete(name)
   }
-  return active === undefined ? state : { baseline: state.baseline, active }
+  return active === undefined
+    ? state
+    : { baseline: state.baseline, active, used: used ?? state.used ?? new Set() }
 }
 
 /**
- * End the session's activations — a compaction rewrote the conversation they
- * belonged to — while keeping the counter baseline.
+ * End the session's activations that no call backs, at the compaction boundary.
+ *
+ * A compaction rewrites the conversation, so the provider's prompt prefix is
+ * recomputed anyway: this is the one boundary where dropping a tool costs no
+ * cache, which is why idle time is off by default and why this is the only place
+ * the offered set shrinks. Only the part the session never used goes — an offer
+ * from a context match or a search that the model did not act on. A tool this
+ * session did call is one it really uses, so it stays active, stamped with its
+ * last touch; evicting it would charge a re-discovery step for a tool the
+ * session demonstrably needs. A used name that was never activated falls back to
+ * the compaction's own clock. The counter baseline is never pruned.
+ *
+ * The used record is cumulative for the session and deliberately never bounded:
+ * with the shipped `DEFAULT_TOOL_IDLE_MS` of `0` nothing else removes a name, so
+ * a tool the session used stays offered for the rest of the session, across every
+ * further compaction. This boundary shrinks the offers no call backs — it never
+ * shrinks one the session used again.
+ *
  * @param state - activation state before the compaction.
- * @returns the updated state, or the input when no session tool was active.
+ * @param at - epoch milliseconds of the compaction.
+ * @returns the updated state, or the input when nothing was active or used, or
+ *   when the rebuild is equivalent to what is already there — a caller compares
+ *   by identity to tell a real change from a boundary that changed nothing.
  */
-export function onCompaction(state: ActivationState): ActivationState {
-  if (state.active.size === 0) return state
-  return { baseline: state.baseline, active: new Map() }
+export function onCompaction(state: ActivationState, at: number): ActivationState {
+  // `used` post-dates the interface: a state an embedder built before the field
+  // existed reads as a session that has used nothing.
+  const used = state.used ?? new Set<string>()
+  if (state.active.size === 0 && used.size === 0) return state
+  const active = new Map<string, number>()
+  for (const name of used) active.set(name, state.active.get(name) ?? at)
+  // A second compaction with no new call rebuilds exactly the map already there,
+  // and an equal-but-different object would read as a change to every caller
+  // that compares by identity. Same names and same stamps: the input comes back.
+  if (active.size === state.active.size) {
+    let equivalent = true
+    for (const [name, stamp] of active) {
+      if (state.active.get(name) !== stamp) {
+        equivalent = false
+        break
+      }
+    }
+    if (equivalent) return state
+  }
+  return { baseline: state.baseline, active, used: state.used ?? new Set() }
 }
 
 /**
@@ -858,7 +967,18 @@ export function autoOffers(state: AutoOfferState): readonly string[] {
   return entries.map((entry) => entry.name)
 }
 
-/** Whether two context-driven states describe the same offered set and history. */
+/**
+ * Whether two context-driven states offer the same names.
+ *
+ * Only the presented names are compared, never the advance stamp and never the
+ * per-name window stamps, so an advance that changes nothing hands back the
+ * previous state without ticking the advance counter: the sticky window ages by
+ * changes of the offered set, not by input count. This was reviewed as a
+ * possible stickiness off-by-one and cannot produce a wrong offered set — a
+ * stall can only hold names the ranking has just chosen again, and it ends at
+ * the first advance whose set differs — so do not re-chase an age here before
+ * reading `advanceAutoOffer`.
+ */
 function sameAutoOffer(left: AutoOfferState, right: AutoOfferState): boolean {
   const leftNames = autoPresentedNames(left)
   const rightNames = autoPresentedNames(right)
@@ -1207,10 +1327,10 @@ export interface ActivationWiringOptions {
    */
   readonly onActivated?: (names: readonly string[], step: number) => void
   /**
-   * Told that a compaction ended the session's activations, so the caller can
-   * drop the step records that belong to them. Absent leaves the records in
-   * place, which only means a later activation of the same name may carry the
-   * step of the offer the compaction removed.
+   * Told that a compaction ended some of the session's activations, so the
+   * caller can drop the step records that belonged to the ones it removed.
+   * Absent leaves the records in place, which only means a later activation of
+   * the same name may carry the step of the offer the compaction removed.
    */
   readonly onCompaction?: () => void
   /** Context-driven state to start from; defaults to an empty state. */
@@ -1463,10 +1583,11 @@ export function installActivation(options: ActivationWiringOptions): () => void 
   const observe = (_session: unknown, event: SessionEventLike): void => {
     try {
       if (event?.type === 'compaction/end') {
-        options.setState(onCompaction(options.state()))
-        // The step records belong to activations a compaction has just dropped,
-        // so they go with them: a name activated again after this is stamped
-        // with the step it returns on, not with the one it left on.
+        options.setState(onCompaction(options.state(), Date.now()))
+        // The step records of the activations the compaction just dropped go
+        // with them: a name activated again after this is stamped with the step
+        // it returns on, not with the one it left on, while a tool the session
+        // really used keeps the step its offer happened on.
         options.onCompaction?.()
         // A compaction rewrote the conversation the offers belonged to, so the
         // context tier starts over; the counter baseline is untouched.

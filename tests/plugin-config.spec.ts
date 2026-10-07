@@ -192,7 +192,7 @@ describe('plugin config card', () => {
     // The served value wins for activationSeeded; the mirrored default fills in
     // the fields the snapshot carries no value for.
     expect(labeled(tree, 'Seeded tools').props.value).toBe('12')
-    expect(labeled(tree, 'Calls to pin').props.value).toBe('5')
+    expect(labeled(tree, 'Calls to pin').props.value).toBe('1')
     expect(labeled(tree, 'Tool activation').props['aria-checked']).toBe(true)
     expect(labeled(tree, 'Global writes').props['aria-checked']).toBe(false)
   })

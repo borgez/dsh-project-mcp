@@ -37,6 +37,7 @@ import {
   resolveConfig,
 } from '../src/index.ts'
 import type { ProjectMcpService } from '../src/index.ts'
+import { ProjectMcpRuntime } from '../src/runtime.ts'
 import { ROUTE_PREFIX } from '../src/shared.ts'
 import type { RouteHandler, WebServerLike } from '../src/ui.ts'
 
@@ -357,6 +358,30 @@ describe('apply', () => {
     // The route disposer the panel block returned tears the registration down.
     host.scopeUnsubscribers.forEach((dispose) => dispose())
     // Then the plugin's own blocks: runtime, counters and policy all unwind.
+    for (const effect of host.effects) (effect.disposer as () => void)()
+  })
+
+  it('notes a tools/result call under the execution view’s own name and agent', async () => {
+    const host = fakeHost([])
+    await apply(host.ctx, {})
+    const listener = host.listeners.get('tools/result')?.[0]
+    expect(listener).toBeDefined()
+
+    // `apply` is where the registry's execution view meets the activation state,
+    // and the two facts it forwards are the call's own. The activation specs
+    // call `noteToolUse` directly — the API this wrapper reaches — so a swapped
+    // pair (`exec.agent?.id` for `exec.name`) would leave their fixtures green
+    // while `used` stayed empty in production; that mapping is pinned here, on
+    // the listener the registry drives.
+    const note = vi.spyOn(ProjectMcpRuntime.prototype, 'noteToolUse')
+    listener?.({ agent: { id: 'session-1' }, name: 'mcp__ghost__tool' }, { isError: false })
+    expect(note).toHaveBeenLastCalledWith('session-1', 'mcp__ghost__tool')
+    // A sessionless call carries no agent, and the runtime is handed the absence.
+    listener?.({ name: 'read' }, { isError: false })
+    expect(note).toHaveBeenLastCalledWith(undefined, 'read')
+    note.mockRestore()
+
+    host.scopeUnsubscribers.forEach((dispose) => dispose())
     for (const effect of host.effects) (effect.disposer as () => void)()
   })
 })

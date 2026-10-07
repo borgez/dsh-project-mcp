@@ -17,6 +17,7 @@ import {
   DEFAULT_AUTO_ACTIVATION_STICKY_STEPS,
   DEFAULT_TOOL_BUDGET_CHARS,
   MAX_AUTO_ACTIVATION_LIMIT,
+  MAX_AUTO_ACTIVATION_STICKY_STEPS,
   MAX_AUTO_QUERY_CHARS,
   MIN_AUTO_SCORE,
   SEARCH_TOOL_NAME,
@@ -191,32 +192,49 @@ describe('sticky window', () => {
     const beta = [tool('mcp__alpha__beta', 'beta topic')]
     const gamma = [tool('mcp__alpha__gamma', 'gamma topic')]
     const delta = [tool('mcp__alpha__delta', 'delta topic')]
+    // An explicit window, not the shipped one: this pins the arithmetic below.
+    const window = { stickySteps: 2 }
 
     // Advance 1: `hot` enters.
-    let state = advanceAutoOffer(createAutoOfferState(), { userText: 'hot topic' }, hot)
+    let state = advanceAutoOffer(createAutoOfferState(), { userText: 'hot topic' }, hot, window)
     expect(names(state)).toEqual(['mcp__alpha__hot'])
 
     // Advance 2: the task moved on, but `hot` is still inside its window.
-    state = advanceAutoOffer(state, { userText: 'cold topic' }, cold)
+    state = advanceAutoOffer(state, { userText: 'cold topic' }, cold, window)
     expect(names(state)).toEqual(['mcp__alpha__cold', 'mcp__alpha__hot'])
 
     // Advance 3: the last advance `hot` is offered for (`stickySteps` of 2
     // means two further advances after the one that ranked it).
-    state = advanceAutoOffer(state, { userText: 'beta topic' }, beta)
+    state = advanceAutoOffer(state, { userText: 'beta topic' }, beta, window)
     expect(names(state)).toEqual(['mcp__alpha__beta', 'mcp__alpha__cold', 'mcp__alpha__hot'])
 
     // Advance 4: out of the window, three advances after it entered.
-    state = advanceAutoOffer(state, { userText: 'gamma topic' }, gamma)
+    state = advanceAutoOffer(state, { userText: 'gamma topic' }, gamma, window)
     expect(names(state)).toEqual(['mcp__alpha__beta', 'mcp__alpha__cold', 'mcp__alpha__gamma'])
 
     // Advance 5: `cold` is on its last advance, `beta` still holds.
 
-    state = advanceAutoOffer(state, { userText: 'delta topic' }, delta)
+    state = advanceAutoOffer(state, { userText: 'delta topic' }, delta, window)
     expect(names(state)).toEqual([
       'mcp__alpha__beta',
       'mcp__alpha__delta',
       'mcp__alpha__gamma',
     ])
+  })
+
+  it('holds a ranked name across fifty later advances at the shipped window', () => {
+    const hot = [tool('mcp__alpha__hot', 'hot topic')]
+    // The shipped window spans a whole session, so the name the first task
+    // ranked survives long after the ranking moved on — the offered set grows
+    // and the request keeps one tool list instead of being rewritten per turn.
+    let state = advanceAutoOffer(createAutoOfferState(), { userText: 'hot topic' }, hot)
+    expect(names(state)).toEqual(['mcp__alpha__hot'])
+
+    for (let advance = 0; advance < 50; advance += 1) {
+      const later = [tool(`mcp__alpha__cold_${String(advance)}`, `cold topic ${String(advance)}`)]
+      state = advanceAutoOffer(state, { userText: 'cold topic' }, later)
+      expect(names(state)).toContain('mcp__alpha__hot')
+    }
   })
 
   it('keeps a name offered only for this advance when the window is zero', () => {
@@ -292,9 +310,9 @@ describe('sticky window', () => {
 describe('configuration clamps', () => {
   it('reads the shipped defaults when nothing is configured', () => {
     expect(DEFAULT_AUTO_ACTIVATION_LIMIT).toBe(12)
-    expect(DEFAULT_AUTO_ACTIVATION_STICKY_STEPS).toBe(2)
+    expect(DEFAULT_AUTO_ACTIVATION_STICKY_STEPS).toBe(100)
     expect(autoOfferLimit(undefined)).toBe(12)
-    expect(autoOfferStickySteps(undefined)).toBe(2)
+    expect(autoOfferStickySteps(undefined)).toBe(100)
     expect(MIN_AUTO_SCORE).toBeGreaterThan(0)
   })
 
@@ -302,7 +320,7 @@ describe('configuration clamps', () => {
     expect(autoOfferLimit(-5)).toBe(0)
     expect(autoOfferLimit(10_000)).toBe(MAX_AUTO_ACTIVATION_LIMIT)
     expect(autoOfferStickySteps(-1)).toBe(0)
-    expect(autoOfferStickySteps(10_000)).toBe(20)
+    expect(autoOfferStickySteps(10_000)).toBe(MAX_AUTO_ACTIVATION_STICKY_STEPS)
   })
 
   it('disables the tier at a zero cap', () => {
@@ -569,6 +587,24 @@ describe('scope wiring', () => {
       data: { role: 'user', source: { kind: 'user' }, content: [{ type: 'image' }] },
     })
     expect(mcpNames(await ctx.assemble())).toEqual(['mcp__alpha__code_review'])
+  })
+
+  it('never shrinks the assembled set when unrelated messages arrive after an activation', async () => {
+    const ctx = new FakeScopeCtx()
+    wiring(ctx, () => SCHEMAS)
+
+    const search = ctx.registered.get(SEARCH_TOOL_NAME)
+    if (search === undefined) throw new Error(`${SEARCH_TOOL_NAME} was not registered`)
+    await search.execute({ query: 'code review' }, undefined)
+    expect(mcpNames(await ctx.assemble())).toEqual(['mcp__alpha__code_review'])
+
+    // Later turns carry text the corpus does not rank at all. An activation is
+    // session state, not task state, so every later assembly still carries the
+    // tool: dropping it mid-session would rewrite the prompt prefix.
+    for (const text of ['weather tomorrow', 'unrelated note', 'nothing ranked here']) {
+      ctx.emitSessionEvent(userMessage(text))
+      expect(mcpNames(await ctx.assemble())).toEqual(['mcp__alpha__code_review'])
+    }
   })
 
   it('does not offer a context match when the context tier is disabled', async () => {

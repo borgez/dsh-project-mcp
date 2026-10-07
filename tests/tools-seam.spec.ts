@@ -127,7 +127,7 @@ describe('tool presentation seam', () => {
       sessionId: 's1',
       mounted: SURFACE,
       budgetChars: 0,
-      activation: { baseline: new Set(['mcp__tglider__workspace']), active: new Map() },
+      activation: { baseline: new Set(['mcp__tglider__workspace']), active: new Map(), used: new Set() },
     })
     expect(row?.baseline).toEqual(['mcp__tglider__workspace'])
     const counts = toolCounts(row as SessionTools)
@@ -146,6 +146,7 @@ describe('tool presentation seam', () => {
       activation: {
         baseline: new Set(),
         active: new Map([['mcp__tglider__find_references', at]]),
+        used: new Set(),
       },
     })
     expect(row?.activated).toEqual([

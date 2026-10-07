@@ -171,12 +171,12 @@ Plugin config is the `cordis.patch.yml` row (defaults shown):
     credentialsFile: ''    # default: $DSH_HOME/.credentials.yaml
     allowGlobalWrite: false # let the editor write the documents of globalFiles
     activationEnabled: true   # offer MCP tools through `mcp_search_tools` + activation
-    activationSeeded: 8       # counter-seeded tools that are always offered
-    activationMinCalls: 5     # calls one tool needs before it is seeded
-    toolIdleMs: 1800000       # drop a session-activated tool after this long without a call; 0 disables
+    activationSeeded: 16      # counter-seeded tools that are always offered
+    activationMinCalls: 1     # calls one tool needs before it is seeded
+    toolIdleMs: 0             # drop a session-activated tool after this long without a call; 0 keeps it for the session
     guidanceEnabled: true     # one short project-MCP guidance section in the session system prompt
     activationAutoLimit: 12   # names the task-context tier may offer at once; 0 disables that tier
-    activationAutoStickySteps: 2  # extra user messages a context offer stays offered
+    activationAutoStickySteps: 100  # extra user messages a context offer stays offered
     activationToolBudgetChars: 40000  # serialized MCP surface above which tools are deferred; 0 defers always
     projectMarkers: ['.git', '.dsh', '.kimi-code', 'package.json']
     fileMarkers: ['.sln', '.slnx', '.csproj']
@@ -345,10 +345,12 @@ deployment wants, without touching the registry (this is the `disclosure` mode o
 *Tool policy* above; a project can be switched to `direct` or `off` instead):
 
 - **Hot tools are offered directly.** A tool whose project counters reached
-  `activationMinCalls` (default 5) is seeded into a **baseline** that appears in
-  the request from the first step on; `activationSeeded` (default 8) caps how
-  many names the counters may seed. The counters are the ones above, so the
-  baseline is remembered across sessions and restarts.
+  `activationMinCalls` (default 1) is seeded into a **baseline** that appears in
+  the request from the first step on; `activationSeeded` (default 16) caps how
+  many names the counters may seed. One call is enough, so the baseline follows
+  what the project really uses, and the counters only ever add names to it — a
+  tool that was called once stays offered. The counters are the ones above, so
+  the baseline is remembered across sessions and restarts.
 - **Matching tools are offered from the task context.** The host ranks the
   project's mounted tools against the newest task text with BM25 — over the tool
   name and description, tokenized on case boundaries, separators and punctuation,
@@ -364,14 +366,16 @@ deployment wants, without touching the registry (this is the `disclosure` mode o
   The counters keep accumulating either way, so the decision follows a project
   as it grows.
 - **The offered set is sticky, so it rarely changes.** A name stays offered for
-  the task text that offered it plus `activationAutoStickySteps` (default 2)
-  later messages, one input per recomputation, so several steps share one tool
-  list instead of following every dip of the ranking. Because the inner listeners
-  rebuild the registry list on every step, the additions are re-applied each time
-  from what those listeners actually returned; when that list already carries
-  everything, the listener hands back the **identical** assembly object. A
-  changing tool list rewrites the prompt prefix and invalidates the model's
-  cache, so the plugin changes it deliberately and rarely.
+  the task text that offered it plus `activationAutoStickySteps` (default 100)
+  later messages, one input per recomputation, so the whole session shares one
+  tool list instead of following every dip of the ranking. Because the inner
+  listeners rebuild the registry list on every step, the additions are re-applied
+  each time from what those listeners actually returned; when that list already
+  carries everything, the listener hands back the **identical** assembly object.
+  A changing tool list rewrites the prompt prefix and invalidates the model's
+  cache — the provider re-reads the prompt from the first altered token — so the
+  shipped window is wide enough that an offer outlives the task that produced it
+  and the list changes at most a compaction or an activation, not every turn.
 - **The rest are found, not listed.** The plugin registers `mcp_search_tools` in
   the session's own scope and also offers it from its own assembly listener — a
   presentation plugin that trims the list to an allowlist would otherwise drop
@@ -390,12 +394,21 @@ deployment wants, without touching the registry (this is the `disclosure` mode o
   activated tools join the offered
   list from the **next** model step on; only the tools already listed are
   reliable until then.
-- **Everything falls away again.** A session-activated tool that is not called
-  within `toolIdleMs` (default 30 minutes) is dropped at the next `agent/status`
-  transition, and a `compaction/end` clears the session's activations and the
-  context offers outright. The counter baseline survives both — it is derived
-  from durable counters, not from the session — and a pin survives them for the
-  same reason (*Tool policy* above).
+- **What does fall away is opt-in.** The shipped `toolIdleMs: 0` disables the
+  idle sweep, so a searched tool stays offered for the rest of the session, and
+  the offered set only ever grows there. A positive `toolIdleMs` restores the
+  old behaviour: a session-activated tool that is not called within the window
+  is dropped at the next `agent/status` transition. A `compaction/end` is the one
+  boundary that shrinks the set on its own: the conversation those offers
+  belonged to is rewritten there, so the provider recomputes the prompt prefix
+  anyway and a shorter list costs nothing newly. It drops the offers the model
+  never acted on — a context match or a search it did not call — and keeps the
+  activations a call backs: a tool the model called at least once stays offered
+  from the next step on, stamped with the time of that call. A tool called
+  without ever being activated is kept for the same reason — the session used it
+  — and the context tier restarts from scratch at that boundary. The counter
+  baseline survives both — it is derived from durable counters, not from the
+  session — and a pin survives them for the same reason (*Tool policy* above).
 
 **Where the task text comes from.** The context tier reads the session's own
 `session/event` stream: the newest committed `user/message` supplies the text,

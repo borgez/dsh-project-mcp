@@ -3083,7 +3083,10 @@ export class ProjectMcpRuntime {
           for (const name of names) state.steps.set(name, step)
         },
         onCompaction: () => {
-          state.steps.clear()
+          // A step record belongs to the activation it was made for, so the ones
+          // a compaction just dropped go with them — while a tool the session
+          // really used keeps the step its offer happened on.
+          this.pruneStepRecords(state)
         },
         autoState: state.auto ?? createAutoOfferState(),
         setAutoState: (next) => {
@@ -3322,8 +3325,10 @@ export class ProjectMcpRuntime {
   }
 
   /**
-   * Refresh the freshness of a tool a session actually called. It rides the same
-   * `tools/result` subscription the counters use, so no second observer exists.
+   * Record a call against the session's activation state: it refreshes the
+   * freshness of a session-activated tool, and it is the evidence a later
+   * compaction keeps that activation by. It rides the same `tools/result`
+   * subscription the counters use, so no second observer exists.
    * @param agentId - calling agent, when the call was agent-scoped.
    * @param toolName - public registry name of the call.
    */
@@ -3342,10 +3347,21 @@ export class ProjectMcpRuntime {
     // A step record belongs to the activation it was made for, so a name that
     // fell out of the window takes its record with it; one that returns is
     // stamped again with the step it returns on.
-    if (state.activation !== current) {
-      for (const name of [...state.steps.keys()]) {
-        if (!state.activation.active.has(name)) state.steps.delete(name)
-      }
+    if (state.activation !== current) this.pruneStepRecords(state)
+  }
+
+  /**
+   * Drop the step records whose activation the session no longer holds.
+   *
+   * Called wherever activations end — the idle sweep and a compaction — so a
+   * record never outlives the offer it was made for, and a name the session
+   * still offers keeps the step its offer happened on.
+   * @param state - the session whose records are reconciled.
+   */
+  private pruneStepRecords(state: AgentState): void {
+    const active = state.activation?.active
+    for (const name of [...state.steps.keys()]) {
+      if (active === undefined || !active.has(name)) state.steps.delete(name)
     }
   }
 

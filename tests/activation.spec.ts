@@ -19,6 +19,7 @@ import {
   DEFAULT_ACTIVATION_MIN_CALLS,
   DEFAULT_ACTIVATION_SEEDED,
   DEFAULT_SEARCH_LIMIT,
+  DEFAULT_TOOL_IDLE_MS,
   MAX_SEARCH_TOKENS,
   SEARCH_TOOL_NAME,
   activate,
@@ -161,14 +162,38 @@ describe('session activation state', () => {
     expect([...presentedNames(next)].sort()).toEqual(['mcp__a__hot', 'mcp__a__new'])
   })
 
-  it('refreshes only a name the session actually activated', () => {
+  it('refreshes only a name the session actually activated, and records the call as evidence', () => {
     const state = activate(createActivationState(['mcp__a__hot']), ['mcp__a__warm'], 5)
+    const called = noteUse(state, 'mcp__a__warm', 30)
 
-    expect(noteUse(state, 'mcp__a__warm', 30).active.get('mcp__a__warm')).toBe(30)
-    // A baseline tool and an unknown tool are not activated by being called.
+    expect(called.active.get('mcp__a__warm')).toBe(30)
+    expect([...called.used]).toEqual(['mcp__a__warm'])
+    // A repeated call at the same instant changes nothing: the very same state
+    // comes back, so a caller can compare by identity.
+    expect(noteUse(called, 'mcp__a__warm', 30)).toBe(called)
+    // A baseline tool is not activated by being called, and the durable baseline
+    // already keeps it offered, so nothing is recorded for it either.
     expect(noteUse(state, 'mcp__a__hot', 30)).toBe(state)
-    expect(noteUse(state, 'mcp__a__stranger', 30)).toBe(state)
-    expect(noteUse(state, 'mcp__a__warm', 5)).toBe(state)
+    // A tool called without an activation is recorded all the same — the session
+    // really used it — while its stamp stays out of `active` until a compaction.
+    const stranger = noteUse(state, 'mcp__a__stranger', 30)
+    expect([...stranger.active]).toEqual([['mcp__a__warm', 5]])
+    expect([...stranger.used]).toEqual(['mcp__a__stranger'])
+  })
+
+  it('never records a core tool call, whatever rides the same result hook', () => {
+    const state = activate(createActivationState(), ['mcp__a__warm'], 5)
+
+    // `read` and `bash` reach the same `tools/result` subscription the plugin's
+    // own tools do; only the `mcp__` namespace may enter the session's state.
+    expect(noteUse(state, 'read', 30)).toBe(state)
+    expect(noteUse(state, 'bash', 30)).toBe(state)
+    expect(noteUse(state, 'write', 30)).toBe(state)
+
+    // A state nothing but a core call touched compacts to an empty one.
+    const compacted = onCompaction(noteUse(state, 'read', 40), 100)
+    expect(compacted.active.size).toBe(0)
+    expect(compacted.used.size).toBe(0)
   })
 
   it('prunes exactly the stale session tools and keeps the fresh ones', () => {
@@ -184,13 +209,83 @@ describe('session activation state', () => {
     expect([...pruneIdle(state, 100, 100).active]).toEqual([['mcp__a__fresh', 100]])
   })
 
-  it('clears session activations on compaction but keeps the counter baseline', () => {
-    const state = activate(createActivationState(['mcp__a__hot']), ['mcp__a__warm'], 5)
+  it('forgets the used record of a name the idle sweep drops', () => {
+    const called = noteUse(activate(createActivationState(), ['mcp__a__warm'], 5), 'mcp__a__warm', 30)
 
-    const compacted = onCompaction(state)
-    expect(compacted.active.size).toBe(0)
+    const swept = pruneIdle(called, 1000, 10)
+    expect(swept.active.size).toBe(0)
+    // A positive window is an explicit opt-in to forgetting: the evidence goes
+    // with the offer, so the compaction that follows cannot resurrect the tool.
+    expect(swept.used.size).toBe(0)
+    expect([...presentedNames(onCompaction(swept, 2000))]).toEqual([])
+
+    // Only the evicted name is forgotten, and a sweep with nothing to evict
+    // still returns the very same state.
+    const fresh = noteUse(activate(createActivationState(), ['mcp__a__fresh'], 1000), 'mcp__a__fresh', 1000)
+    expect(pruneIdle(fresh, 1001, 10)).toBe(fresh)
+    expect([...fresh.used]).toEqual(['mcp__a__fresh'])
+  })
+
+  it('keeps the session activation a call backs and drops the offer it does not', () => {
+    const state = noteUse(
+      activate(createActivationState(['mcp__a__hot']), ['mcp__a__warm', 'mcp__a__idle'], 5),
+      'mcp__a__warm',
+      30,
+    )
+
+    const compacted = onCompaction(state, 100)
+    // The called name survives, stamped with its last call; the offer the model
+    // never used is gone, and the counter baseline is untouched.
+    expect([...compacted.active]).toEqual([['mcp__a__warm', 30]])
     expect([...compacted.baseline]).toEqual(['mcp__a__hot'])
-    expect(onCompaction(compacted)).toBe(compacted)
+    // A name used but never activated falls back to the compaction's own clock.
+    const unprompted = onCompaction(noteUse(createActivationState(), 'mcp__a__stranger', 7), 100)
+    expect([...unprompted.active]).toEqual([['mcp__a__stranger', 100]])
+    // Nothing active and nothing used: the very same state comes back.
+    const empty = createActivationState(['mcp__a__hot'])
+    expect(onCompaction(empty, 100)).toBe(empty)
+  })
+
+  it('keeps the used record cumulative across compactions', () => {
+    const first = onCompaction(
+      noteUse(activate(createActivationState(), ['mcp__a__warm'], 5), 'mcp__a__warm', 30),
+      100,
+    )
+
+    // The second compaction has no new call to read and keeps the name all the
+    // same: the used record, not a fresh call, is what carries it. The stamp
+    // stays the last call, not the second boundary's clock.
+    const second = onCompaction(first, 200)
+    expect([...second.active]).toEqual([['mcp__a__warm', 30]])
+    expect([...second.used]).toEqual(['mcp__a__warm'])
+    // And because that rebuild adds nothing, the very same state comes back:
+    // a caller compares by identity to tell a boundary that changed something
+    // from one that did not.
+    expect(second).toBe(first)
+  })
+
+  it('reads a state built before the used field existed without throwing', () => {
+    // `used` post-dates the interface, so an embedder's live state — or one
+    // restored across an upgrade — can reach these functions without the field.
+    // Every read of it is optional and every write coalesces an empty record.
+    const legacy = {
+      baseline: new Set<string>(),
+      active: new Map<string, number>([['mcp__a__warm', 5]]),
+    } as unknown as ActivationState
+
+    // A core call changes nothing at all, field or not: the same object returns.
+    expect(noteUse(legacy, 'read', 30)).toBe(legacy)
+    // A real call records into a fresh record instead of throwing.
+    const called = noteUse(legacy, 'mcp__a__warm', 30)
+    expect(called.active.get('mcp__a__warm')).toBe(30)
+    expect([...called.used]).toEqual(['mcp__a__warm'])
+    // The idle sweep and the compaction boundary read it the same way.
+    const swept = pruneIdle(legacy, 1000, 10)
+    expect(swept.active.size).toBe(0)
+    expect(swept.used.size).toBe(0)
+    // A boundary with nothing to keep returns the input itself, field or not.
+    const emptyLegacy = { baseline: new Set(['mcp__a__hot']), active: new Map() } as unknown as ActivationState
+    expect(onCompaction(emptyLegacy, 100)).toBe(emptyLegacy)
   })
 })
 
@@ -752,16 +847,27 @@ describe('agent-scope wiring', () => {
     expect(errors).toHaveLength(1)
   })
 
-  it('clears session activations on compaction and keeps the baseline', () => {
+  it('keeps a called activation through compaction and drops the offer the model never used', () => {
     const ctx = new FakeAgentCtx()
-    let state = activate(createActivationState(['mcp__a__hot']), ['mcp__a__warm'], AT)
+    let state = activate(
+      createActivationState(['mcp__a__hot']),
+      ['mcp__a__warm', 'mcp__a__idle'],
+      AT,
+    )
     wiring(ctx, () => state, (next) => void (state = next), () => [])
 
     ctx.emitSessionEvent({ type: 'turn/end' })
-    expect([...state.active]).toEqual([['mcp__a__warm', AT]])
+    expect([...state.active]).toEqual([
+      ['mcp__a__warm', AT],
+      ['mcp__a__idle', AT],
+    ])
 
+    // The session calls one of the two before the conversation is compacted:
+    // that call is the evidence the boundary keeps, and the offer the model
+    // never acted on is the one it ends.
+    state = noteUse(state, 'mcp__a__warm', AT + 5)
     ctx.emitSessionEvent({ type: 'compaction/end' })
-    expect(state.active.size).toBe(0)
+    expect([...state.active]).toEqual([['mcp__a__warm', AT + 5]])
     expect([...state.baseline]).toEqual(['mcp__a__hot'])
   })
 
@@ -898,8 +1004,8 @@ describe('agent-scope wiring', () => {
     // Activated project tool + pinned profile name both offered.
     expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__one', 'mcp__beta__run'])
 
-    // A compaction drops the session's activation; the pin is project state, so
-    // it is offered on the step after it all the same.
+    // A compaction ends the activation no call backs; the pin is project state,
+    // so it is offered on the step after it all the same.
     ctx.emitSessionEvent({ type: 'compaction/end' })
     expect(state.active.size).toBe(0)
     expect(names((await ctx.assemble()).tools)).toEqual(['mcp__beta__run'])
@@ -1047,6 +1153,31 @@ describe('runtime wiring', () => {
     store.dispose()
   })
 
+  it('seeds a tool into the baseline after a single call', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    const store = new UsageStore({ file: join(tmp(), 'usage.json'), flushMs: 60_000 })
+    store.record({
+      projectRoot: project.root,
+      serverName: 'alpha',
+      tool: 'tool',
+      isError: false,
+      at: AT,
+      sessionId: 'session-one',
+    })
+    // No `activationMinCalls`: the shipped default is one call, so a tool the
+    // project really used enters the durable baseline on its very first call
+    // instead of waiting for the counters to climb.
+    const runtime = runtimeFor(undefined, { usage: store })
+    const ctx = new FakeAgentCtx()
+    runtime.attach(new FakeScope([fakeAgent('session-1', project.session, ctx)]))
+    await runtime.syncNow()
+
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
+
+    await runtime.disposeAll()
+    store.dispose()
+  })
+
   it('drops an activated tool after the idle window, and a real call keeps it fresh', async () => {
     const project = makeProject({ alpha: { command: 'npx' } })
     const runtime = runtimeFor({ toolIdleMs: 40 })
@@ -1058,10 +1189,19 @@ describe('runtime wiring', () => {
 
     const search = searchToolOf(ctx)
     await search.execute({ query: 'alpha' }, undefined)
+    // The model calls what it searched for, so the window is measured from a
+    // real call this time.
+    runtime.noteToolUse('session-1', 'mcp__alpha__tool')
     expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
 
     await sleep(60)
     scope.emit('agent/status', { agent, status: 'idle' })
+    expect(names((await ctx.assemble()).tools)).toEqual([])
+
+    // A positive window is an explicit opt-in to forgetting the tool: the
+    // evicted call leaves the used record too, so the boundary that follows has
+    // no evidence to resurrect the offer with.
+    ctx.emitSessionEvent({ type: 'compaction/end' })
     expect(names((await ctx.assemble()).tools)).toEqual([])
 
     // Freshness is a real call: the same tool activated again and used survives
@@ -1069,6 +1209,71 @@ describe('runtime wiring', () => {
     await search.execute({ query: 'alpha' }, undefined)
     runtime.noteToolUse('session-1', 'mcp__alpha__tool')
     scope.emit('agent/status', { agent, status: 'running' })
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
+
+    await runtime.disposeAll()
+  })
+
+  it('keeps an activated tool across status transitions at the shipped idle default', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    // No `toolIdleMs`: the shipped `0` disables pruning, so a searched tool
+    // stays offered for the rest of the session.
+    const runtime = runtimeFor()
+    const ctx = new FakeAgentCtx()
+    const agent = fakeAgent('session-1', project.session, ctx)
+    const scope = new FakeScope([agent])
+    runtime.attach(scope)
+    await runtime.syncNow()
+
+    const search = searchToolOf(ctx)
+    await search.execute({ query: 'alpha' }, undefined)
+    runtime.noteToolUse('session-1', 'mcp__alpha__tool')
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
+
+    // Well past the explicit window the test above uses: both status
+    // transitions still leave the activated tool in the request.
+    await sleep(60)
+    scope.emit('agent/status', { agent, status: 'idle' })
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
+    scope.emit('agent/status', { agent, status: 'running' })
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
+
+    // And the shipped `0` swept nothing, so the call is still on record and the
+    // compaction boundary keeps the tool offered.
+    ctx.emitSessionEvent({ type: 'compaction/end' })
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
+
+    await runtime.disposeAll()
+  })
+
+  it('keeps what the session called through a compaction and drops what it only offered', async () => {
+    const project = makeProject({ alpha: { command: 'npx' }, beta: { command: 'npx' } })
+    const runtime = runtimeFor()
+    const ctx = new FakeAgentCtx()
+    const agent = fakeAgent('session-1', project.session, ctx)
+    runtime.attach(new FakeScope([agent]))
+    await runtime.syncNow()
+
+    // Two searched tools are offered, and the model calls exactly one of them.
+    // The call is fed through the runtime's own API: the registry reaches it via
+    // the `tools/result` wrapper in `src/index.ts`, and that mapping
+    // (`exec.name`/`exec.agent?.id`) is pinned on the wrapper itself in
+    // `tests/entry.spec.ts` — this spec is about what the state does with a call.
+    const search = searchToolOf(ctx)
+    await search.execute({ query: 'alpha' }, undefined)
+    await search.execute({ query: 'beta' }, undefined)
+    expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool', 'mcp__beta__tool'])
+    runtime.noteToolUse('session-1', 'mcp__alpha__tool')
+    // A core tool rides that hook too, and it is no part of the session's state.
+    runtime.noteToolUse('session-1', 'read')
+
+    ctx.emitSessionEvent({ type: 'compaction/end' })
+
+    // The called tool survives with the stamp of its call; the offer the model
+    // never used is the one the boundary ends.
+    const row = sessionTools(runtime, 'session-1')
+    expect(row?.activated?.map((tool) => tool.name)).toEqual(['mcp__alpha__tool'])
+    expect(row?.deferred).toEqual(['mcp__beta__tool'])
     expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
 
     await runtime.disposeAll()
@@ -1135,8 +1340,11 @@ describe('runtime wiring', () => {
     runtime.attach(new FakeScope([fakeAgent('session-1', project.session, ctx)]))
     await runtime.syncNow()
 
-    expect(DEFAULT_ACTIVATION_SEEDED).toBe(8)
-    expect(DEFAULT_ACTIVATION_MIN_CALLS).toBe(5)
+    expect(DEFAULT_ACTIVATION_SEEDED).toBe(16)
+    expect(DEFAULT_ACTIVATION_MIN_CALLS).toBe(1)
+    // Idle pruning is off at the shipped value: a session keeps what it
+    // activated until a compaction, so the request only ever grows.
+    expect(DEFAULT_TOOL_IDLE_MS).toBe(0)
     expect(ctx.registered.has(SEARCH_TOOL_NAME)).toBe(true)
 
     await runtime.disposeAll()
@@ -1220,8 +1428,9 @@ describe('runtime wiring', () => {
     expect(first?.deferred).toEqual(['mcp__beta__tool'])
     expect(first?.deferring).toBe(true)
 
-    // A compaction clears the session's activations and context offers; a pin is
-    // project state, so it is offered on the step after it all the same.
+    // A compaction ends the activations no call backs and clears the context
+    // offers; a pin is project state, so it is offered on the step after all the
+    // same.
     ctx.emitSessionEvent({ type: 'compaction/end' })
     expect(names((await ctx.assemble()).tools)).toEqual(['mcp__alpha__tool'])
 
@@ -1295,8 +1504,8 @@ describe('runtime wiring', () => {
     expect(first?.deferred).toEqual(['mcp__alpha__tool'])
     expect(first?.deferring).toBe(true)
 
-    // A compaction clears the session's activations; a pin is project state, so
-    // it is offered on the step after it all the same.
+    // A compaction ends the activations no call backs; a pin is project state,
+    // so it is offered on the step after it all the same.
     ctx.emitSessionEvent({ type: 'compaction/end' })
     expect(names((await ctx.assemble()).tools)).toEqual(['mcp__beta__run'])
 

@@ -87,7 +87,8 @@ identical name set exits immediately (`sameNames`).
 1. **`installBridge`** — the session took the project: the first sync and a subscription to
    `tools/change` **in the session's scope**. The subscription is the real harness's path: the
    registry announces a change to all listeners, so a server that published its tools after the
-   mount reaches the session's layer by itself.
+   mount reaches the session's layer by itself. It reaches it **deferred and coalesced** — see
+   §3.1 — because the announcement is per entry, not per generation.
 2. **`settleActivation`** — the mount's activation finished. The instance is registered before
    its fiber published anything, so "the server is up" is the first moment there is something to
    forward.
@@ -99,8 +100,9 @@ identical name set exits immediately (`sameNames`).
 The sync must survive a **re-entry on its own event**. The registry emits `tools/change`
 synchronously **from inside** a registration (`packages/core/scope/src/store.ts`,
 `ScopedLayers.effect`: `if (notify) this.onChange()` after a successful insert), and the session's
-subscription hangs on that same event — so every forwarder registration calls `sync` again. The
-two batch rules are the fix:
+subscription hangs on that same event — so every forwarder registration calls `sync` again. Three
+batch rules are the fix, and the third one answers the *shape* of that event rather than the
+re-entry it causes:
 
 - **Releasing the old batch — before registering the new one.** In one layer one name lives once,
   so registering over a live batch is rejected as a duplicate; on a duplicate the bridge yields
@@ -111,7 +113,28 @@ two batch rules are the fix:
   "dirty", and the owning frame runs once more on completion — which also picks up a set that
   changed during registration. `drop` holds the same barrier for the whole release (otherwise the
   release's own `tools/change` events resurrect the falling batch) and discards the scheduled
-  pass.
+  pass. The barrier is **held, not taken**: a drop that runs *inside* a pass — a detach driven from
+  a listener — restores the owning frame's guard instead of clearing it, so the next
+  `tools/change` cannot start a nested pass inside a frame that still owns one.
+- **A subscription notes, it does not sync.** The event is emitted once per entry registered and
+  once per entry disposed (`ScopedLayers.effect` calls `onChange` on apply *and* on dispose), so
+  replacing a batch of N forwarders announces **2·N** changes, and the event carries no origin: a
+  session that is not mid-pass would run a pass for each one, and each pass projects the project's
+  whole catalog — which the registry answers by deep-cloning every visible definition's JSON
+  schema. With several bridged sessions the work is multiplied once more, because every session
+  hears every other session's announcements. Measured on the production composition: one MCP
+  `tools/list` held the event loop for the whole 54 s of a CPU profile — 47% of samples inside
+  this sync, 52% in the collector the projections feed — with only 0.46% of samples in the
+  plugin's own frames. So the subscription calls `note`: a change that arrives during a pass is
+  absorbed by it, and a burst that arrives between passes costs **one** queued pass however many
+  events it carries (`ForwardBatch.note`). The queued pass runs on the microtask queue, off the
+  stack of whoever registered a tool; every read path still brings the batch level synchronously
+  (§3, trigger 3), so no reader waits for the queue. A forwarder left momentarily stale is safe by
+  construction: it resolves the project entry at **call** time and fails closed when there is none.
+- **The synchronous pass is bounded.** One `sync` runs at most `MAX_SYNC_PASSES` rounds; a registry
+  that keeps moving under the batch has the remainder handed to the **timer** queue, so no state
+  of the registry can hold the caller's frame — or a chain of microtasks, which would starve timers
+  and I/O just as effectively.
 
 A set change is always the whole batch: a server that added or removed tools leaves behind
 neither a partial set nor a dead forwarder.
@@ -149,7 +172,12 @@ through `tools/change` leaves no dead forwarders (a failed tool leaves together 
 forwarder, and `drop` does not resurrect the batch); the forwarder carries **all** the project
 definition's fields, including `finalizeContent` — verified on a structural double of the
 `dsh-mcp-client` definition and on its behaviour (a saved MCP picture reaches the result through
-the forwarder).
+the forwarder). The re-entry work itself is pinned too: a burst of announcements costs one pass
+and one probe per batch, not one per event; the work is not on the emitter's stack at all; a pass
+that keeps finding a new set stops at `MAX_SYNC_PASSES` and finishes off the stack; a scheduled
+pass's failure reaches `onError` instead of the emitter; and a `drop` inside a pass keeps the
+owning frame's guard (`tests/bridge.spec.ts`, with the storm shape in
+`tests/bridge-storm.spec.ts`).
 
 ## 5. Limits, and what to do on a harness refusal
 

@@ -32,6 +32,7 @@ import type { Scope, ScopeKey } from '@deepseek-ai/dsh-scope'
 import { describe, expect, it } from 'vitest'
 import {
   ForwardBatch,
+  MAX_SYNC_PASSES,
   forwardProjectTools,
   projectToolNames,
   type BridgeContextLike,
@@ -220,6 +221,22 @@ async function until(what: string, ready: () => boolean, timeoutMs = 2000): Prom
     await new Promise(resolve => setTimeout(resolve, 5))
   }
   throw new Error(`timed out waiting for ${what}`)
+}
+
+/**
+ * Let every pass a batch queued run.
+ *
+ * A batch answers `tools/change` on the microtask queue — that is what makes a
+ * burst of announcements cost one pass — so a claim about what it did *not* do
+ * has to be made after the queue drains.
+ */
+async function settled(): Promise<void> {
+  await new Promise<void>(resolve => {
+    queueMicrotask(() => resolve())
+  })
+  await new Promise<void>(resolve => {
+    queueMicrotask(() => resolve())
+  })
 }
 
 /** One tool definition, shaped like the one `mcp-client` registers. */
@@ -580,12 +597,13 @@ describe('F-19 spike: forwarding into a session layer', () => {
     // The session subscribes exactly as the runtime does, and the batch does the
     // swapping. Registration announces itself through this very event, so each
     // pass below re-enters the batch from inside its own registration — the path
-    // that used to release the batch being built and register a second copy.
+    // that used to release the batch being built and register a second copy,
+    // and the reason the subscription takes `note()` rather than `sync()`.
     const batch = new ForwardBatch({
       names: () => projectToolNames(projectKey, scope => tools.schemas(scope), mountedServers),
       register: (names) => forwardProjectTools({ ctx: first.ctx, project: projectKey, names, registry }),
     })
-    const detach = first.scope.ctx.on('tools/change', () => batch.sync())
+    const detach = first.scope.ctx.on('tools/change', () => batch.note())
     batch.sync()
 
     expect(projectNames()).toEqual(['mcp__alpha__run'])
@@ -607,6 +625,9 @@ describe('F-19 spike: forwarding into a session layer', () => {
     const releaseFourth = await publish(project, projectTool(instance, 'alpha', 'fourth'))
     expect(tools.namesIn(first.key)).toEqual(projectNames())
     releaseFourth()
+    // The release announces itself like any other change, so the batch answers
+    // it on the microtask queue the emitter does not wait for.
+    await settled()
     expect(projectNames()).toEqual(['mcp__alpha__run', 'mcp__alpha__second', 'mcp__alpha__third'])
     expect(tools.namesIn(first.key)).toEqual(projectNames())
     expect(tools.get('mcp__alpha__fourth', first.key)).toBeUndefined()
@@ -627,5 +648,142 @@ describe('F-19 spike: forwarding into a session layer', () => {
     expect(tools.namesIn(first.key)).toEqual([])
     // ...and the project keeps its own entries throughout.
     expect(projectNames()).toEqual(['mcp__alpha__run', 'mcp__alpha__second', 'mcp__alpha__third'])
+  })
+
+  it('costs one pass for a burst of announcements, not one per event', async () => {
+    const { root, tools, registry, projectKey, project, servers, mountedServers } = await scenario()
+    const first = await session(root, { roster: 'web' })
+    const instance = servers.instances[0] as Instance
+
+    let probes = 0
+    let passes = 0
+    const batch = new ForwardBatch({
+      names: () => {
+        probes += 1
+        return projectToolNames(projectKey, scope => tools.schemas(scope), mountedServers)
+      },
+      register: (names) => {
+        passes += 1
+        return forwardProjectTools({ ctx: first.ctx, project: projectKey, names, registry })
+      },
+    })
+    const detach = first.scope.ctx.on('tools/change', () => batch.note())
+    batch.sync()
+    expect(passes).toBe(1)
+
+    // One generation of eight tools, published the way `syncTools` publishes it:
+    // a single synchronous loop of registrations. The eight insertions and the
+    // pass's own replacement of the batch therefore land as one burst, which is
+    // the shape that used to hold the event loop — the registry emits once per
+    // entry registered and once per entry disposed, and the event carries no
+    // origin, so every watcher ran a pass per event.
+    probes = 0
+    passes = 0
+    await project.ctx.plugin({
+      name: 'bridge-spec-burst',
+      inject: ['tools'],
+      apply: (ctx: Context) => {
+        const facade = ctx as unknown as FacadeSurface
+        for (let index = 0; index < 8; index += 1) {
+          facade.tools.register(projectTool(instance, 'alpha', `burst${index}`))
+        }
+      },
+    })
+    await settled()
+
+    // Eighteen announcements — the eight insertions from the publishing loop,
+    // then the pass's own disposal of the one forwarder it replaces and the nine
+    // it registers — and one registration batch paid for: the pass that replaced
+    // the batch, plus the single round its own announcements re-enter it with.
+    // One probe per round, and nothing per event.
+    expect(passes).toBe(1)
+    expect(probes).toBe(2)
+    expect(tools.namesIn(first.key)).toEqual(tools.namesIn(projectKey))
+    expect(tools.namesIn(first.key)).toHaveLength(9)
+    batch.drop()
+    detach()
+  })
+
+  it('bounds a pass that keeps finding a new set, and runs the overflow off the stack', async () => {
+    let batch!: ForwardBatch
+    let probes = 0
+    let stable = false
+    const registered: string[][] = []
+    batch = new ForwardBatch({
+      names: () => {
+        probes += 1
+        return stable ? ['mcp__alpha__fixed'] : [`mcp__alpha__t${probes}`]
+      },
+      register: (names) => {
+        registered.push([...names])
+        // The registry announces the insertion synchronously from inside it, as
+        // the real one does: this is what re-enters the pass from within itself.
+        batch.note()
+        return () => undefined
+      },
+    })
+    batch.sync()
+
+    // Whatever the registry does, one call runs a bounded number of rounds: the
+    // frame that asked for the pass is never held by a set that keeps moving.
+    expect(registered).toHaveLength(MAX_SYNC_PASSES)
+    expect(probes).toBe(MAX_SYNC_PASSES)
+
+    // ...and the remainder really did leave the stack: it runs on a timer rather
+    // than in a chain of microtasks, which is what would still starve timers and
+    // I/O, and it settles the moment the set stops moving.
+    stable = true
+    await new Promise<void>(resolve => {
+      setTimeout(() => resolve(), 5)
+    })
+    expect(registered).toHaveLength(MAX_SYNC_PASSES + 1)
+  })
+
+  it('keeps the pass guard when a drop runs inside the pass', async () => {
+    let batch!: ForwardBatch
+    let registrations = 0
+    let deepest = 0
+    let depth = 0
+    batch = new ForwardBatch({
+      names: () => ['mcp__alpha__run'],
+      register: () => {
+        registrations += 1
+        depth += 1
+        deepest = Math.max(deepest, depth)
+        // The session is detached from inside its own registration — the shape a
+        // listener-driven detach has — and the frame that owns the pass must go
+        // on owning it: a nested sync has to be refused, not run.
+        batch.drop()
+        batch.sync()
+        depth -= 1
+        return () => undefined
+      },
+    })
+    batch.sync()
+
+    expect(registrations).toBe(1)
+    expect(deepest).toBe(1)
+  })
+
+  it('reports a scheduled pass’s failure instead of throwing into the emitter', async () => {
+    const failures: unknown[] = []
+    const batch = new ForwardBatch({
+      names: () => {
+        throw new Error('probe down')
+      },
+      register: () => () => undefined,
+      onError: (error) => failures.push(error),
+    })
+
+    // The emitter that reported the change has returned long before the pass
+    // runs, so `note()` cannot throw into it.
+    expect(() => batch.note()).not.toThrow()
+    await settled()
+    expect(failures).toHaveLength(1)
+    expect(String(failures[0])).toMatch(/probe down/)
+
+    // The synchronous path keeps propagating: its caller is still there to catch
+    // it, which is how the runtime writes the same line.
+    expect(() => batch.sync()).toThrow(/probe down/)
   })
 })

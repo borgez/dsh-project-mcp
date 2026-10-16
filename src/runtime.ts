@@ -2864,9 +2864,14 @@ export class ProjectMcpRuntime {
     const servers = (): ReadonlySet<string> => this.runtimeNamesOf(state)
     const batch = new ForwardBatch({
       names: () => {
+        const project = state.project
+        // No project, nothing to probe. An empty key here would read the
+        // *global* view instead — every tool any scope registered — and each
+        // pass would forward names this session's project never published.
+        if (project === undefined) return undefined
         try {
           return projectToolNames(
-            state.project?.key ?? {},
+            project.key,
             (scope) => this.bridgeSchemas(scope),
             servers(),
           )
@@ -2879,20 +2884,27 @@ export class ProjectMcpRuntime {
           return undefined
         }
       },
-      register: (names) => forwardProjectTools({
-        ctx: context,
-        project: state.project?.key ?? {},
-        names,
-        registry,
-      }),
+      register: (names) => {
+        const project = state.project
+        if (project === undefined) return () => undefined
+        return forwardProjectTools({
+          ctx: context,
+          project: project.key,
+          names,
+          registry,
+        })
+      },
+      onError: (error) => this.reportBridgeFailure(state, error),
     })
     const bridge: BridgeForwarders = {
       batch,
       detach: () => undefined,
     }
     // The listener lives on the session scope and is dropped with it, so a
-    // released session never keeps syncing against a project it left.
-    const detach = state.scope.ctx.on('tools/change', () => this.syncBridge(state))
+    // released session never keeps syncing against a project it left. It only
+    // *notes* the change: the registry emits this once per entry registered and
+    // once per entry disposed, and a pass per event is what held the event loop.
+    const detach = state.scope.ctx.on('tools/change', () => this.noteBridge(state))
     bridge.detach = typeof detach === 'function' ? (detach as () => void) : () => undefined
     state.bridge = bridge
     this.syncBridge(state)
@@ -2914,10 +2926,40 @@ export class ProjectMcpRuntime {
     try {
       bridge.batch.sync()
     } catch (error) {
-      this.ctx.logger.warn(
-        `project-mcp: forwarding the tools of ${state.project?.projectRoot ?? 'the project'} into session ${state.agent.id} failed: ${errorText(error)}`,
-      )
+      this.reportBridgeFailure(state, error)
     }
+  }
+
+  /**
+   * Note one registry change for one session's bridge, off the emitter's stack.
+   *
+   * The event this answers is emitted synchronously from inside the registry's
+   * own insertion and removal — once per entry in, once per entry out — so one
+   * MCP generation swap is a burst of thousands. Running the pass here would
+   * make whoever registered a tool pay for every session watching the project,
+   * and each pass projects the project's whole catalog. The batch folds the
+   * burst into one queued pass instead, which is also why this is not
+   * {@link syncBridge}: the read paths, the mount settle and the scope wiring
+   * all bring the batch level synchronously, before anything reads the layer.
+   * @param state - the session whose bridge noticed the change.
+   */
+  private noteBridge(state: AgentState): void {
+    state.bridge?.batch.note()
+  }
+
+  /**
+   * Write the one warning line a failed bridge pass is allowed.
+   *
+   * Shared by the synchronous pass and by the one a batch runs on its own: a
+   * scheduled pass has no caller left to propagate its failure to, so the batch
+   * hands it here through `onError` rather than swallowing it.
+   * @param state - the session whose bridge failed.
+   * @param error - what the pass threw.
+   */
+  private reportBridgeFailure(state: AgentState, error: unknown): void {
+    this.ctx.logger.warn(
+      `project-mcp: forwarding the tools of ${state.project?.projectRoot ?? 'the project'} into session ${state.agent.id} failed: ${errorText(error)}`,
+    )
   }
 
   /** The project scope's visible schemas, as {@link projectToolNames} reads them. */

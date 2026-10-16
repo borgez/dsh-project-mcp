@@ -33,7 +33,11 @@
  * it level with the project's live set: the set is re-read on every trigger,
  * the batch is replaced as a whole (released before the replacement is
  * registered), and the re-entry every registration forces on the sync through
- * `tools/change` is owned rather than left to tear the batch down.
+ * `tools/change` is owned rather than left to tear the batch down. Because that
+ * event is emitted once per entry registered and once per entry disposed, the
+ * subscription takes {@link ForwardBatch.note} — which folds a whole burst into
+ * one queued pass — and never {@link ForwardBatch.sync}, whose work belongs to
+ * the frame that asked for it.
  *
  * The module is import-free of `@deepseek-ai/dsh-tools` on purpose, exactly like
  * {@link ./activation.ts}: the registry, definition and schema surfaces are
@@ -320,7 +324,29 @@ export interface ForwardBatchOptions {
    * @returns the exact releaser that drops the whole batch.
    */
   readonly register: (names: readonly string[]) => () => void
+  /**
+   * Report a failure thrown by a pass this batch ran on its own.
+   *
+   * A pass requested by {@link ForwardBatch.note} runs off the caller's stack:
+   * the registry call that announced the change has already returned, and so
+   * has every frame that could have propagated the failure. Without this the
+   * batch would go quiet — no forwarder, and no trace of why.
+   * @param error - what the scheduled pass threw.
+   */
+  readonly onError?: (error: unknown) => void
 }
+
+/**
+ * How many synchronous passes one {@link ForwardBatch.sync} may run.
+ *
+ * Two is the ordinary ceiling: a pass that replaced the batch is re-entered once
+ * by its own announcements and short-circuits on the second round, and a pass
+ * that found the set unchanged exits on the first. The extra room is for a set
+ * that genuinely moved while the batch was registering — and the ceiling itself
+ * is what stops a registry that keeps moving under the batch from holding the
+ * event loop for as long as it likes.
+ */
+export const MAX_SYNC_PASSES = 4
 
 /**
  * One session's live forwarding batch, kept level with the project's live tools.
@@ -334,7 +360,8 @@ export interface ForwardBatchOptions {
  * which the live first copy refuses as a duplicate. A bridge that steps aside
  * for a duplicate (it must, for the session's own tools) then drops those names
  * silently, and a full pass records `namesIn` as the whole set, so the loss is
- * frozen for every later pass. That is the defect this class exists to close.
+ * frozen for every later pass. That is the first defect this class exists to
+ * close.
  *
  * So: a pass requested from inside a pass only marks the batch dirty, and the
  * frame that owns the batch runs one more pass when it is complete — which is
@@ -342,6 +369,23 @@ export interface ForwardBatchOptions {
  * the old batch is released **before** the new one is registered, because one
  * layer holds one entry per name: registering over a live batch would refuse
  * every name it already had.
+ *
+ * Owning the re-entry is not enough on its own, and the shape of the event is
+ * why. Replacing a batch of N entries announces 2·N changes — one per disposal
+ * and one per registration — and the event carries no origin, so every session
+ * watching the stream runs a pass for every one of them, and every pass begins
+ * by projecting the project's whole catalog, which the registry answers by deep
+ * cloning each visible definition's JSON schema. The registry per pass is what
+ * makes that cost real: one MCP generation swap was measured holding the event
+ * loop for the full 54 seconds of a CPU profile (47% of its samples inside this
+ * sync, 52% in the collector the projections feed), while the plugin's own
+ * frames were 0.46% of it. So {@link note} is the seat a `tools/change`
+ * subscription takes, not {@link sync}: a change that arrives during a pass is
+ * absorbed by it, and a burst that arrives between passes costs **one** queued
+ * pass however many events it carries. A stale forwarder is safe in the window
+ * that opens — it resolves the project entry at call time and fails closed when
+ * there is none (`forwarder`) — and every read path brings the batch level
+ * before it reads, so a reader never waits for the queue.
  */
 export class ForwardBatch {
   /** The names the live batch was registered for; `undefined` before the first pass. */
@@ -352,6 +396,8 @@ export class ForwardBatch {
   #building = false
   /** Whether a pass asked for while {@link #building} still needs a run. */
   #again = false
+  /** Whether a scheduled pass is already waiting for a burst of changes. */
+  #queued = false
 
   constructor(private readonly options: ForwardBatchOptions) {}
 
@@ -367,11 +413,12 @@ export class ForwardBatch {
   }
 
   /**
-   * Bring the session's layer level with the project's live tool set.
+   * Bring the session's layer level with the project's live tool set, now.
    *
    * Cheap when it already is: an unchanged set short-circuits and leaves the
    * live batch — and its generation of definitions — untouched. Re-entrant
-   * while registering: see the class note.
+   * while registering, and bounded to {@link MAX_SYNC_PASSES} synchronous
+   * rounds so no registry state can hold the caller's frame: see the class note.
    * @returns nothing; a failure from the probe or the registry propagates.
    */
   sync(): void {
@@ -379,15 +426,45 @@ export class ForwardBatch {
       this.#again = true
       return
     }
+    // A queued pass would read the very registry this one is about to read, so
+    // it is dropped here rather than left to repeat the probe.
+    this.#queued = false
     this.#building = true
     try {
-      do {
+      for (let pass = 0; pass < MAX_SYNC_PASSES; pass += 1) {
         this.#again = false
         this.#syncOnce()
-      } while (this.#again)
+        if (!this.#again) return
+      }
+      // Still moving after a full round: hand the rest to the queue. A registry
+      // that keeps changing under the batch must not hold the caller's frame.
+      this.#schedule(true)
     } finally {
       this.#building = false
     }
+  }
+
+  /**
+   * Note that the registry changed, and bring the batch level — off this stack.
+   *
+   * This is the seat a `tools/change` subscription takes, and the reason it is
+   * not {@link sync}: the event is emitted once per entry registered and once
+   * per entry disposed, from inside the registry's own insertion and removal,
+   * so one MCP generation swap is a burst of thousands. A change that arrives
+   * while a pass is running is absorbed by that pass — it re-reads the set it is
+   * replacing before it returns — and a burst that arrives between passes costs
+   * one pass: the first queues, every later one folds into it.
+   *
+   * Nothing reads a stale layer for it. Every read path brings the batch level
+   * first (`src/runtime.ts`, `mountedSchemas`), and the queued pass has run
+   * before any turn that could read the layer at all.
+   */
+  note(): void {
+    if (this.#building) {
+      this.#again = true
+      return
+    }
+    this.#schedule(false)
   }
 
   /**
@@ -399,15 +476,45 @@ export class ForwardBatch {
    * session is subscribed to that event; a pass re-entered from there must not
    * resurrect the batch it is watching being dropped. So the guard is held for
    * the whole release, and the pass it queues is discarded rather than run.
+   *
+   * The guard is *held*, not taken: a drop that runs inside a pass — a detach
+   * driven from a listener, a scope torn down under a registration — restores
+   * the pass's own `building` rather than clearing it. Clearing it there would
+   * let the next `tools/change` start a nested pass inside a frame that still
+   * owns one, which is exactly the re-entry this class exists to own.
    */
   drop(): void {
+    const building = this.#building
     this.#building = true
     try {
       this.#releaseBatch()
     } finally {
-      this.#building = false
+      this.#building = building
       this.#again = false
+      this.#queued = false
     }
+  }
+
+  /**
+   * Queue the one deferred pass a burst of changes needs.
+   * @param yielding - run it on the timer queue rather than the microtask queue.
+   * A pass that overran {@link MAX_SYNC_PASSES} asks for this: a chain of
+   * microtasks still starves timers and I/O, a round of timers does not.
+   */
+  #schedule(yielding: boolean): void {
+    if (this.#queued) return
+    this.#queued = true
+    const run = (): void => {
+      if (!this.#queued) return
+      this.#queued = false
+      try {
+        this.sync()
+      } catch (error) {
+        this.options.onError?.(error)
+      }
+    }
+    if (yielding) setTimeout(run, 0)
+    else queueMicrotask(run)
   }
 
   /** One pass: read the project's set, then replace the batch when it moved. */

@@ -167,6 +167,8 @@ Done as one arc (F-46 … F-49), each with a registry row in `docs/features.md`:
   (self-healing).
 - The bridge's `drop()` called from a `tools/change` listener resets the re-entry barrier: there is
   no real caller (the only listener is `syncBridge`), but a second one will need a depth counter.
+  **Closed by F-63** — `drop` now holds the guard it found and restores it instead of taking it, and
+  the second listener this note was waiting for (`noteBridge`) is what made the window real.
 - Gate runs in an isolated `$DSH_HOME`: F-25 cleans up after itself, but the test instance still
   reads the same session store as the person — a separate home removes the whole "a run occupied the
   user's session" class. The price: `dsh plugin add link:` for the profile would have to be repeated

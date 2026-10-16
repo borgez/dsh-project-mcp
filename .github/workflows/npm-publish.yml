@@ -1,11 +1,25 @@
-# Publishing the npm package. One implementation, two callers:
+# Publishing the npm package. One implementation, three entry points — and this
+# file is never *called*, only run:
 #
 #   - the `release:` event (a GitHub Release created by hand) — the manual escape
 #     hatch, publishing whatever tag the release names;
-#   - `workflow_call` from `release.yml`, which bumps the version on `main`, tags
-#     it and creates the Release in that same run. The call is explicit because a
-#     Release created with the workflow's own `GITHUB_TOKEN` does not start
-#     another workflow run — the `release:` trigger would never fire for it.
+#   - `workflow_dispatch` from `release.yml`, which bumps the version on `main`,
+#     tags it and creates the Release in that same run, then dispatches this
+#     workflow top-level and follows the run it started. The dispatch is explicit
+#     because a Release created with that job's own `GITHUB_TOKEN` does not start
+#     another workflow run — the `release:` trigger would never fire for it;
+#   - `workflow_dispatch` by hand, for a publish that died after its tag and
+#     Release were cut.
+#
+# It is dispatched rather than called because npm matches its trusted-publisher
+# configuration against the **calling** workflow's filename, and a run reached
+# through `workflow_call` from `release.yml` therefore offers
+# `job_workflow_ref` = `release.yml` — a file the registration does not name — so
+# the token exchange comes back as a masked `404` while the same run's top-level
+# entry matches. A registration cannot be edited and one package has exactly one
+# of them, so the only way back is a top-level run. `release.yml`'s dispatch job
+# runs top-level too and fails when this workflow's run fails, so a refused
+# credential still fails the release.
 #
 # `package.json` carries the published version; the tag only selects the commit.
 # The two are checked against each other and the run fails when they disagree,
@@ -25,19 +39,14 @@ name: Node.js Package
 on:
   release:
     types: [created]
-  workflow_call:
-    inputs:
-      ref:
-        description: Git ref to publish; empty means the release tag, or the triggering ref
-        required: false
-        default: ''
-        type: string
-  # The third entry point exists because a publish that died after its tag and
-  # Release were cut has no other replay: the `release:` trigger stays silent for
-  # a Release the release job created with its own `GITHUB_TOKEN`, and a fresh
-  # push would either ask for a version the manifest already carries or cut a
-  # second tag for a publish that never landed. It also lets the workflow be run
-  # on its own while a trusted-publisher configuration is being settled.
+  # The dispatched entry point exists because a publish that died after its tag
+  # and Release were cut has no other replay: the `release:` trigger stays silent
+  # for a Release the release job created with its own `GITHUB_TOKEN`, and a
+  # fresh push would either ask for a version the manifest already carries or cut
+  # a second tag for a publish that never landed. It is also how `release.yml`
+  # drives the automated publish, and why this file no longer declares
+  # `workflow_call`: a called job offers the *caller's* filename to the registry,
+  # which is the mismatch the header describes.
   workflow_dispatch:
     inputs:
       ref:
@@ -186,14 +195,22 @@ jobs:
           # The registry's read side can trail the write by a moment, so a miss
           # is retried rather than reported: a false alarm here, after a publish
           # that did happen, would send someone looking for a package that exists.
-          for attempt in 1 2 3 4 5; do
+          #
+          # The window is ~4 minutes (24 × 10 s) because a green `npm publish`
+          # does not mean the version is already readable: npm answers the PUT
+          # with the version "being processed … may take a few minutes to become
+          # available", and the 25 s this step used to allow ran out exactly that
+          # way in run 37620778839 — the publish was green, the read lagged, and
+          # the step failed the release. A longer wait costs nothing on the
+          # ordinary path, where the first attempt already answers.
+          for attempt in $(seq 1 24); do
             published="$(npm view "dsh-project-mcp@$version" version 2> /dev/null || true)"
             if [[ "$published" == "$version" ]]; then
               echo "npm serves dsh-project-mcp@$published"
               exit 0
             fi
-            echo "attempt $attempt: npm answers '${published}' for dsh-project-mcp@$version"
-            sleep 5
+            echo "attempt $attempt/24: npm answers '${published}' for dsh-project-mcp@$version"
+            sleep 10
           done
           echo "::error::npm does not serve dsh-project-mcp@$version after a successful publish"
           exit 1

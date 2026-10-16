@@ -11,8 +11,12 @@
 #   3. the version is written to `package.json`, committed as
 #      `release: dsh-project-mcp <version>`, tagged `v<version>`, and the GitHub
 #      Release is created from the tag;
-#   4. `npm-publish.yml` publishes that tag to npm (called explicitly: a Release
-#      created with this workflow's own `GITHUB_TOKEN` starts no other run).
+#   4. `npm-publish.yml` publishes that tag to npm, as a top-level run this
+#      workflow dispatches and then waits on (dispatched, not called: npm matches
+#      its trusted publisher against the *calling* workflow's filename, so a
+#      `workflow_call` from here offers `release.yml` and the token exchange
+#      fails — the dispatch is explicit because a Release created with this
+#      workflow's own `GITHUB_TOKEN` starts no other run).
 #
 # The release commit is therefore the only thing that ever changes the version,
 # and a tag can only exist over a manifest that already agrees with it.
@@ -171,14 +175,61 @@ jobs:
   publish:
     needs: version
     if: ${{ needs.version.outputs.released == 'true' && inputs.dry_run != true }}
-    # The called workflow exchanges an OIDC token for the publish credential, so
-    # the calling job has to grant it: a reusable workflow never holds more than
-    # its caller gives, and the `contents: write` above is what the tagging job
-    # needs, not this one. No secrets are inherited — trusted publishing needs
-    # none, which is the point of it.
+    # The version job above is the only writer; this one only hands the publish
+    # to `npm-publish.yml` and waits for it.
+    #
+    # The hand-off is a `workflow_dispatch` of that file rather than the
+    # `workflow_call` it used to be, because npm matches a trusted-publisher
+    # configuration against the **calling** workflow's filename: a run reached
+    # through `workflow_call` from this file offers this file's name, which the
+    # registration does not carry, and the OIDC exchange comes back as a masked
+    # `404`. The registration cannot be edited — one per package, revocable and
+    # recreated, never amended — so the publish has to be a top-level run of
+    # `npm-publish.yml` itself. Verified: the top-level dispatch exchanged its
+    # token with HTTP 201 and published `0.4.0` (run 37620778839).
+    #
+    # `actions: write` is the dispatch and the follow; nothing here needs
+    # `id-token: write`, holds a registry secret, or inherits one — the
+    # dispatched run mints and exchanges its own token, which is the point of
+    # trusted publishing.
+    runs-on: ubuntu-24.04  # pinned: the ubuntu-latest label migrates to Ubuntu 26 on 2026-10-19 — move this, and re-run the gate, deliberately
     permissions:
+      actions: write
       contents: read
-      id-token: write
-    uses: ./.github/workflows/npm-publish.yml
-    with:
-      ref: v${{ needs.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Dispatch the publish for the tag that was just cut
+        id: dispatch
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+
+          # `gh run list --event=workflow_dispatch --limit 1` is the newest
+          # dispatch of this workflow, and this step is the only dispatcher: the
+          # list is read immediately after the call, so the run on top is the one
+          # just started for the tag this job cut.
+          gh workflow run npm-publish.yml \
+            --ref "v$version" \
+            -f "ref=v$version"
+
+          run_id="$(gh run list \
+            --workflow=npm-publish.yml \
+            --event=workflow_dispatch \
+            --limit 1 \
+            --json databaseId \
+            -q '.[0].databaseId')"
+          echo "dispatching npm-publish.yml for v$version (run $run_id)"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Follow the publish and fail with it
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          # `--exit-status`: the dispatched run's verdict is this job's verdict,
+          # so a refused credential still fails the release run. Without the
+          # wait, a publish that never happened would leave a tag, a Release and
+          # a green release run behind it.
+          gh run watch "$RUN_ID" --exit-status
+          echo "npm-publish.yml run $RUN_ID published v${{ needs.version.outputs.version }}"

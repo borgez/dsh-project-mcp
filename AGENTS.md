@@ -111,10 +111,11 @@ bumps the newest of `package.json` and the highest `v*` tag — both are read be
 drift, and a tag over a manifest that disagrees with it publishes the wrong number under the right
 name. Before tagging, the job refuses to reuse an existing tag or an already-published npm
 version. It then writes the version into `package.json` (that one line, nothing else), commits it
-as `release: dsh-project-mcp <version>`, tags `v<version>`, creates the GitHub Release, and calls
-`.github/workflows/npm-publish.yml` to publish that tag. The call is explicit because a Release
-created with the workflow's own `GITHUB_TOKEN` starts no other run — the `release:` trigger would
-never fire for it.
+as `release: dsh-project-mcp <version>`, tags `v<version>`, creates the GitHub Release, and
+dispatches `.github/workflows/npm-publish.yml` as a **top-level run**, waiting on that run so a
+refused credential still fails the release. The dispatch is explicit because a Release created
+with the workflow's own `GITHUB_TOKEN` starts no other run — the `release:` trigger would never
+fire for it.
 
 Four consequences worth knowing:
 
@@ -134,8 +135,16 @@ Four consequences worth knowing:
   permissions problem. That job pins Node 24, because the exchange needs npm ≥ 11.5.1, and the
   publisher is the **npm CLI**: the pnpm 10 line implements no trusted publishing at all, so
   `pnpm publish` there sends the PUT unauthenticated and the registry masks it as the same 404.
-  `release.yml`'s calling job has to grant `id-token: write` too: a reusable workflow never holds
-  more than its caller gives.
+  The registration is per **workflow file**: npm matches the trusted-publisher configuration
+  against the *calling* workflow's filename, so a publish invoked through `workflow_call` from
+  `release.yml` offers `release.yml` while the registration on npmjs.com names `npm-publish.yml`,
+  and the exchange answers a masked `404`. A package has exactly one such configuration, it
+  cannot be edited, and it can only be revoked and recreated — so the publish cannot be moved
+  into `release.yml`, it has to stay a **top-level run** of `npm-publish.yml`, which
+  `release.yml` now reaches by dispatching that workflow and waiting on the run. That is why the
+  dispatch job grants `actions: write` and no `id-token: write`: the grant was only ever needed
+  because a reusable workflow holds no more than its caller gives, and a dispatch is not a
+  reusable-workflow call — the dispatched run mints and exchanges its own token.
 
 Publishing by hand stays available as the escape hatch: create a GitHub Release for a tag whose
 `package.json` already carries that version, and `npm-publish.yml` publishes it — failing when

@@ -660,6 +660,38 @@ describe('ProjectMcpRuntime', () => {
     expect(await scopes.doubleOf(second.agent)?.callTool('mcp__alpha__tool', {})).toEqual({ server: 'alpha' })
   })
 
+  it('presents the mounted surface as deferred forwarders, so an activation lands where the request reads it', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    // A zero budget defers the whole surface: the schema must leave the model's
+    // tool list while the registry keeps the tool admitted for dispatch.
+    const { runtime, scopes } = harness([], { activationToolBudgetChars: 0 })
+    const { agent } = fakeAgent('session-1', project.session)
+    bindScopeParent(agent, { agentPreset: 'standard' })
+
+    runtime.attach(new FakeScope([agent]))
+    await runtime.syncNow()
+
+    const ctx = scopes.doubleOf(agent)
+    /** The registered forwarder of one name, as the registry resolves it. */
+    const forwarded = (name: string): { deferLoading?: true } | undefined =>
+      ctx?.forwarded.get(name)?.definition as { deferLoading?: true } | undefined
+
+    expect(forwarded('mcp__alpha__tool')?.deferLoading).toBe(true)
+    // Hidden, not unregistered: the exact-name call still executes the
+    // project's own definition, which is the contract the flag must not break.
+    expect(await ctx?.callTool('mcp__alpha__tool', {})).toEqual({ server: 'alpha' })
+    // The way back in is declared, and never deferred itself.
+    expect(ctx?.definitions.has(SEARCH_TOOL_NAME)).toBe(true)
+    expect(forwarded(SEARCH_TOOL_NAME)).toBeUndefined()
+
+    // An activation moves the presentation. The pass is queued, not run on the
+    // caller's stack, so it lands after the microtask the note schedules.
+    await ctx?.callTool(SEARCH_TOOL_NAME, { query: 'alpha' })
+    await sleep(1)
+    expect(forwarded('mcp__alpha__tool')?.deferLoading).toBeUndefined()
+    expect(await ctx?.callTool('mcp__alpha__tool', {})).toEqual({ server: 'alpha' })
+  })
+
   it('keeps a bridged session level with the project across repeated syncs, set and order intact', async () => {
     const project = makeProject({
       alpha: { command: 'npx', args: ['-y', 'alpha'] },

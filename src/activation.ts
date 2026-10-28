@@ -1333,6 +1333,18 @@ export interface ActivationWiringOptions {
    * the same name may carry the step of the offer the compaction removed.
    */
   readonly onCompaction?: () => void
+  /**
+   * Told that the offered set may have moved: a search activated names, a
+   * compaction dropped the ones no call backed, or the context tier advanced.
+   *
+   * A harness whose assembly carries no tool list cannot be filtered from this
+   * module at all (0.2.2 and later: declarations are provider-owned), so the
+   * presentation lives in the caller's own registrations instead — the bridge's
+   * `deferLoading` forwarders. This is the seat that keeps that copy level with
+   * {@link ActivationState}; absent simply means nothing presents the set but the
+   * assembly this module used to rewrite.
+   */
+  readonly onOfferedChanged?: () => void
   /** Context-driven state to start from; defaults to an empty state. */
   readonly autoState?: AutoOfferState
   /** Sink for the context-driven state after every advance that changed it. */
@@ -1432,6 +1444,9 @@ export function installActivation(options: ActivationWiringOptions): () => void 
     if (next === tracker.state) return
     tracker.state = next
     options.setAutoState?.(next)
+    // The offered set moved, so a presentation that lives outside this assembly —
+    // the bridge's `deferLoading` forwarders — has to follow it.
+    options.onOfferedChanged?.()
   }
 
   /** Every name the session's explicit activation and context-driven tiers offer. */
@@ -1489,6 +1504,7 @@ export function installActivation(options: ActivationWiringOptions): () => void 
    * continuation's value comes back by identity.
    */
   const contain = (result: AssemblyLike): AssemblyLike => {
+    if (!Array.isArray(result.tools)) return result
     const foreign = options.foreign?.() ?? NO_FOREIGN
     if (foreign.size === 0) return result
     const kept = result.tools.filter((tool) => !foreign.has(tool.name))
@@ -1511,10 +1527,23 @@ export function installActivation(options: ActivationWiringOptions): () => void 
   }
 
   const merge = (result: AssemblyLike): AssemblyLike => {
+    const policy = options.policy?.() ?? DEFAULT_TOOL_POLICY
+    // A harness whose assembly carries no tool list cannot be shaped from here at
+    // all. From 0.2.2 on, `system-prompt/assemble` transforms a presentation and
+    // the declared schemas are provider-owned, so a listener that rewrote
+    // `assembly.tools` would be writing into a field the harness discards — and
+    // reading it would throw on every model request. The presentation lives in
+    // the caller's `deferLoading` forwarders instead (`src/bridge.ts`), kept level
+    // through {@link ActivationWiringOptions.onOfferedChanged}; this listener
+    // still drives the context tier and degrades to the rest of the harness's
+    // answer.
+    if (!Array.isArray(result.tools)) {
+      if (policy.mode === 'disclosure') advance()
+      return result
+    }
     const surface = wholeSurface()
     // Nothing is visible: there is nothing to find, so nothing is added.
     if (surface.length === 0) return contain(result)
-    const policy = options.policy?.() ?? DEFAULT_TOOL_POLICY
     // `off` promises that the project's tools are not offered, and the promise is
     // about the request, not only about what the panel says: the project plane
     // leaves the assembly here. Only this plugin's own mounts go — the profile
@@ -1594,6 +1623,9 @@ export function installActivation(options: ActivationWiringOptions): () => void 
         tracker.state = resetAutoOffer(tracker.state)
         tracker.calls = []
         tracker.changed = false
+        // The boundary is the one place that shrinks the offered set, so a
+        // presentation outside this assembly re-applies it here.
+        options.onOfferedChanged?.()
         return
       }
       if (event?.type === 'user/message') {
@@ -1626,6 +1658,7 @@ export function installActivation(options: ActivationWiringOptions): () => void 
     activate: (names) => {
       recordActivated(names)
       options.setState(activate(options.state(), names, Date.now()))
+      options.onOfferedChanged?.()
     },
     ...(options.searchLimit === undefined ? {} : { defaultLimit: options.searchLimit }),
   })

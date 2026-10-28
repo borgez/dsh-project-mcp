@@ -430,12 +430,32 @@ request gets the registry's own tool list plus the active schemas, deduplicated
 by name, and `activationEnabled: false` turns the whole mechanism off (every
 mounted tool is listed exactly as before, and no search tool is registered).
 
-Implementation note — the presentation rides the agent's own
-`system-prompt/assemble` waterfall, registered *prepended* so it runs outermost
-and sees the list after other presentation plugins (for example
+Implementation note — the mechanism depends on which harness runs it, because
+DSH 0.2.2 moved declarations out of the prompt assembly. From 0.2.2 on,
+`system-prompt/assemble` transforms a presentation (`sections`, `contexts`,
+`variables`) and carries **no tool list**: the declared schemas come from
+`systemPrompt.tools()` providers and the harness attaches them after the
+waterfall, so a listener writing into `assembly.tools` writes into a field the
+harness discards. The presentation therefore rides this plugin's own
+registrations: the thin per-session forwarders of the F-19 bridge carry
+`deferLoading`, the harness projects that flag onto the model-facing schema, and
+an adapter that understands it (the shipped `dsh-llm-pi-ai` route) leaves the
+definition out of the wire request while the registry keeps the tool admitted for
+dispatch. That is what keeps the paragraph above true on the new harness: the
+tool is invisible to the model and still callable by its exact full name, and
+nothing is unregistered. `installActivation`'s `onOfferedChanged` is what keeps
+the flags level — a search activation, a compaction boundary, a context advance
+and a policy edit each queue one coalesced bridge pass (`ForwardBatch.note`), and
+a pass re-registers only when the names *or* the deferred subset moved.
+
+On an older harness the same module still rewrites the assembly list, through the
+agent's own `system-prompt/assemble` waterfall, registered *prepended* so it runs
+outermost and sees the list after other presentation plugins (for example
 `dsh-progressive-tools`) filtered it. That listener is contained: if this
 plugin's own work fails, the assembly the rest of the harness produced is
-returned unchanged, so a broken probe can never break a model request. One
+returned unchanged, so a broken probe can never break a model request; on a
+harness that hands it a presentation without `tools`, it leaves the document
+alone by identity. One
 residual ordering risk remains: a presentation plugin that trims the list to its
 own allowlist and ends up *outside* this listener (it registered its own
 prepended listener later) drops the schemas this plugin added, leaving only the

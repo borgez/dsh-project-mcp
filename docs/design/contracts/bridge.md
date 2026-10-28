@@ -136,6 +136,19 @@ re-entry it causes:
   of the registry can hold the caller's frame — or a chain of microtasks, which would starve timers
   and I/O just as effectively.
 
+- **A deferred subset is part of the set.** Since DSH 0.2.2 the request's declared schemas are
+  provider-owned (`systemPrompt.tools()`, attached after the `system-prompt/assemble` waterfall),
+  so the plugin's presentation rides these forwarders: `forwardProjectTools` takes a `deferred`
+  predicate and stamps `deferLoading` on those definitions, which an adapter that understands the
+  flag (`dsh-llm-pi-ai`) leaves out of the wire request while the registry keeps the tool admitted
+  for dispatch — hidden from the model, still callable by its exact full name. The flag is baked in
+  at registration, so a pass whose names matched but whose deferred subset moved must still
+  re-register: `ForwardBatch` reads `deferred()` once per pass and compares it with `sameNameSet`,
+  and `sync` is otherwise free again. The runtime recomputes that subset from the offered set
+  (`ActivationState` plus the context window plus pins), which is why
+  `ActivationWiringOptions.onOfferedChanged` exists: an activation, a compaction, an advance and a
+  policy edit each queue one `note`, never a sync on the caller's stack.
+
 A set change is always the whole batch: a server that added or removed tools leaves behind
 neither a partial set nor a dead forwarder.
 

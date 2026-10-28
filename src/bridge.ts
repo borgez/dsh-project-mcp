@@ -113,6 +113,20 @@ export interface ForwardableDefinition extends BridgeToolSchema {
   /** Cooperative timeout budget, preserved for the timeout policy wrapper. */
   readonly timeoutMs?: number
   /**
+   * Deferred-loading request, owned by the presentation rather than by the
+   * project.
+   *
+   * The harness projects this flag onto the model-facing schema
+   * (`projectToolSchema`), and an adapter that understands it (the shipped
+   * `dsh-llm-pi-ai` route omits such a schema from the wire request) then leaves
+   * the definition out of the model's tool list while the registry keeps the
+   * tool admitted for dispatch — a tool the model does not see but can still
+   * call by its exact full name. It is set on the forwarder, never copied from
+   * the project, because which of a session's tools are offered is this plugin's
+   * presentation decision.
+   */
+  readonly deferLoading?: true
+  /**
    * Pure sibling-overlap classifier. Preserved: a forwarder that dropped it
    * would make every forwarded call exclusive while the project tool is
    * parallel-safe.
@@ -201,6 +215,14 @@ export interface ForwardProjectToolsOptions {
   readonly project: object
   /** Names to forward, as {@link projectToolNames} resolved them. */
   readonly names: readonly string[]
+  /**
+   * Names this pass forwards as deferred, so their schemas stay out of the
+   * model's tool list while the registry keeps them callable. Absent defers
+   * none, which is what a session with nothing hidden gets.
+   * @param name - one forwarded name.
+   * @returns whether the forwarder of that name carries `deferLoading`.
+   */
+  readonly deferred?: (name: string) => boolean
   /** Registry lookup used to resolve the live project definition per call. */
   readonly registry: BridgeRegistryLike
 }
@@ -227,11 +249,14 @@ export const FORWARDED_TO = Symbol('dsh-project-mcp.forwarded-to')
  * dispatch would apply pre-execute listeners and guards twice.
  * @param project - the definition to forward, read for its surface.
  * @param lookup - resolves the current project definition of this name.
+ * @param deferred - whether this forwarder asks for deferred loading, so the
+ * model's tool list leaves it out while the registry keeps it callable.
  * @returns the definition to register in a session's layer.
  */
 function forwarder(
   project: ForwardableDefinition,
   lookup: () => ForwardableDefinition | undefined,
+  deferred: boolean,
 ): ForwardableDefinition {
   // The marker rides outside the definition's own surface: it is addressed to a
   // test double standing in for the registry, never to the harness.
@@ -243,6 +268,11 @@ function forwarder(
       // is what silently lost `dsh-mcp-client`'s finalizer: the registry takes
       // it from the definition the session resolves, which is this one.
       ...project,
+      // After the spread, because the presentation decides this flag and the
+      // project has no say in it. A forwarder that is not deferred carries no
+      // flag at all rather than `deferLoading: false`, which is not part of the
+      // harness's schema vocabulary.
+      ...deferred ? { deferLoading: true as const } : {},
       async execute(args: unknown, exec: never): Promise<unknown> {
         const live = lookup()
         if (live === undefined) {
@@ -278,7 +308,11 @@ export function forwardProjectTools(options: ForwardProjectToolsOptions): () => 
     const project = options.registry.get(name, options.project)
     if (project === undefined) continue
     try {
-      disposes.push(tools.register(forwarder(project, () => options.registry.get(name, options.project))))
+      disposes.push(tools.register(forwarder(
+        project,
+        () => options.registry.get(name, options.project),
+        options.deferred?.(name) === true,
+      )))
     } catch {
       // A duplicate in this session's own layer is the session's own tool: it
       // keeps the name, and the bridge steps aside rather than failing a mount.
@@ -318,12 +352,25 @@ export interface ForwardBatchOptions {
    */
   readonly names: () => readonly string[] | undefined
   /**
+   * The names this session presents as deferred — hidden from the model's tool
+   * list while the registry keeps them callable — read once on every pass.
+   *
+   * A pass whose names matched but whose deferred set moved still re-registers:
+   * `deferLoading` is baked into the definition at registration, so the flag a
+   * schema carries is exactly the flag its forwarder was registered with.
+   * Absent defers none, which is the presentation of a session with nothing
+   * hidden.
+   * @returns the deferred names, or none.
+   */
+  readonly deferred?: () => readonly string[]
+  /**
    * Register one batch of forwarders over the session's layer, which this call
    * reaches empty-handed: the batch it replaces is released first.
    * @param names - the names to forward, in registry order.
+   * @param deferred - the names of this batch that carry `deferLoading`.
    * @returns the exact releaser that drops the whole batch.
    */
-  readonly register: (names: readonly string[]) => () => void
+  readonly register: (names: readonly string[], deferred: ReadonlySet<string>) => () => void
   /**
    * Report a failure thrown by a pass this batch ran on its own.
    *
@@ -390,6 +437,8 @@ export const MAX_SYNC_PASSES = 4
 export class ForwardBatch {
   /** The names the live batch was registered for; `undefined` before the first pass. */
   #namesIn: readonly string[] | undefined = undefined
+  /** The names the live batch registered as deferred; `undefined` with no live batch. */
+  #deferredIn: ReadonlySet<string> | undefined = undefined
   /** Disposer of the live registration batch; `undefined` while none is live. */
   #release: (() => void) | undefined = undefined
   /** Whether an owning frame is inside {@link sync}, registering right now. */
@@ -521,7 +570,14 @@ export class ForwardBatch {
   #syncOnce(): void {
     const names = this.options.names()
     if (names === undefined) return
-    if (this.#namesIn !== undefined && sameNames(this.#namesIn, names)) return
+    // A name that enters or leaves the deferred set is a definition change even
+    // when the name set itself is identical: the flag is part of the schema the
+    // registry projects, so a batch registered before the flip would keep
+    // presenting the old answer for every later request.
+    const deferred = new Set(this.options.deferred?.() ?? [])
+    if (this.#namesIn !== undefined
+      && sameNames(this.#namesIn, names)
+      && sameNameSet(this.#deferredIn, deferred)) return
     // Released first, and deliberately — see the class note. Until the new batch
     // is registered the session's layer is empty for the length of one
     // synchronous call, which is the price of every forwarded name being free.
@@ -531,8 +587,9 @@ export class ForwardBatch {
       // The registry's disposer is exact and idempotent, and a failure here must
       // not keep the new batch from registering.
     }
-    this.#release = this.options.register(names)
+    this.#release = this.options.register(names, deferred)
     this.#namesIn = names
+    this.#deferredIn = deferred
   }
 
   /**
@@ -545,6 +602,7 @@ export class ForwardBatch {
     const release = this.#release
     this.#release = undefined
     this.#namesIn = undefined
+    this.#deferredIn = undefined
     release?.()
   }
 }
@@ -590,4 +648,24 @@ export function projectToolNames(
  */
 export function sameNames(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((name, index) => name === right[index])
+}
+
+/**
+ * Whether two deferred-name sets are the same set.
+ *
+ * The batch short-circuits a pass whose forwarded names did not move, and it
+ * must not do that when the *deferred* subset moved instead: the flag rides in
+ * the registered definition, so a stale batch presents a stale answer. Order
+ * carries no meaning here, hence a set comparison rather than {@link sameNames}.
+ * @param left - the deferred set of the live batch; `undefined` with no live batch.
+ * @param right - the deferred set this pass read.
+ * @returns whether the two describe the same names.
+ */
+export function sameNameSet(
+  left: ReadonlySet<string> | undefined,
+  right: ReadonlySet<string>,
+): boolean {
+  if (left === undefined || left.size !== right.size) return false
+  for (const name of right) if (!left.has(name)) return false
+  return true
 }

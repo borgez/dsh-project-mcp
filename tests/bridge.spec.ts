@@ -470,6 +470,75 @@ describe('F-19 spike: forwarding into a session layer', () => {
     expect(servers.running).toBe(1)
   })
 
+  it('presents a deferred forwarder, which the model does not see and can still call', async () => {
+    const { root, tools, registry, projectKey, servers, mountedServers } = await scenario()
+    const first = await session(root, { roster: 'web' })
+    const instance = servers.instances[0] as Instance
+    const names = projectToolNames(projectKey, scope => tools.schemas(scope), mountedServers)
+
+    const release = forwardProjectTools({
+      ctx: first.ctx,
+      project: projectKey,
+      names,
+      registry,
+      deferred: name => name === 'mcp__alpha__run',
+    })
+
+    // The flag is the whole presentation: the harness projects it onto the
+    // model-facing schema and an adapter that understands it leaves the
+    // definition out of the wire request, while the registry still admits the
+    // tool for dispatch — so the exact-name call keeps working.
+    expect(tools.get('mcp__alpha__run', first.key)?.deferLoading).toBe(true)
+    expect(await tools.execute({ name: 'mcp__alpha__run', arguments: { q: 'one' }, scope: first.key })).toEqual({
+      instance: instance.id,
+      call: 'mcp__alpha__run',
+    })
+    release()
+  })
+
+  it('re-registers the batch when only the deferred subset moved', async () => {
+    const { root, tools, registry, projectKey, servers, mountedServers } = await scenario()
+    const first = await session(root, { roster: 'web' })
+    const instance = servers.instances[0] as Instance
+    const hidden = new Set<string>()
+    let passes = 0
+    const batch = new ForwardBatch({
+      names: () => projectToolNames(projectKey, scope => tools.schemas(scope), mountedServers),
+      deferred: () => [...hidden],
+      register: (names, deferred) => {
+        passes += 1
+        return forwardProjectTools({
+          ctx: first.ctx,
+          project: projectKey,
+          names,
+          deferred: name => deferred.has(name),
+          registry,
+        })
+      },
+    })
+
+    batch.sync()
+    expect(passes).toBe(1)
+    expect(tools.get('mcp__alpha__run', first.key)?.deferLoading).toBeUndefined()
+
+    // The name set stands still; only its presentation moves. A batch that
+    // short-circuited on names alone would keep presenting the old answer for
+    // every later request, because the flag was baked in at registration.
+    hidden.add('mcp__alpha__run')
+    batch.sync()
+    expect(passes).toBe(2)
+    expect(tools.get('mcp__alpha__run', first.key)?.deferLoading).toBe(true)
+
+    // An unchanged pass is free again, in either direction.
+    batch.sync()
+    expect(passes).toBe(2)
+    hidden.clear()
+    batch.sync()
+    expect(passes).toBe(3)
+    expect(tools.get('mcp__alpha__run', first.key)?.deferLoading).toBeUndefined()
+    batch.drop()
+  })
+
   it('steps aside when the session already registers the name', async () => {
     const { root, tools, registry, projectKey, servers, mountedServers } = await scenario()
     const first = await session(root, { roster: 'web' })

@@ -534,6 +534,36 @@ class FakeAgentCtx {
     return call()
   }
 
+  /**
+   * Assemble the way DSH 0.2.2 and later does.
+   *
+   * The waterfall transforms a presentation — `sections`, `contexts`,
+   * `variables` — and carries no tool list at all: the harness attaches the
+   * declared schemas from the registry's providers after the waterfall returns,
+   * so whatever a listener writes into `tools` is discarded. A listener that
+   * reads that field as present is what this shape exists to catch.
+   * @param presentation - the object the inner listeners hand back.
+   * @returns whatever the plugin's own listener returned.
+   */
+  async assembleBare(
+    presentation: Record<string, unknown> = { sections: [], contexts: [], variables: {} },
+  ): Promise<Record<string, unknown>> {
+    const records = [...(this.listeners.get('system-prompt/assemble') ?? [])]
+    let index = 0
+    const call = async (): Promise<Record<string, unknown>> => {
+      const listener = records[index]
+      index += 1
+      if (listener === undefined) return presentation
+      const run = listener as unknown as (
+        assembly: Record<string, unknown>,
+        context: unknown,
+        next: () => Promise<Record<string, unknown>>,
+      ) => Promise<Record<string, unknown>>
+      return await run(presentation, { scope: this }, call)
+    }
+    return await call()
+  }
+
   emitSessionEvent(event: SessionEventLike): void {
     for (const listener of [...(this.listeners.get('session/event') ?? [])]) {
       ;(listener as unknown as (session: unknown, event: SessionEventLike) => void)({}, event)
@@ -792,6 +822,43 @@ describe('agent-scope wiring', () => {
       ...overrides,
     })
   }
+
+  it('leaves a tool-less assembly alone on a harness that owns the declarations', async () => {
+    const ctx = new FakeAgentCtx()
+    const errors: unknown[] = []
+    const state = createActivationState(['mcp__alpha__hot'])
+    ctx.innerTools = [tool('mcp__alpha__hot'), tool('mcp__alpha__cold')]
+    const mounted = [tool('mcp__alpha__hot'), tool('mcp__alpha__cold')]
+    const dispose = wiring(ctx, () => state, () => undefined, () => mounted, {
+      onError: (error) => void errors.push(error),
+    })
+
+    // The presentation is the whole document this listener sees; it must come
+    // back by identity, untouched, or the harness would discard the rewrite
+    // anyway — and a throw here would break every model request of the session.
+    const presentation = { sections: [], contexts: [], variables: {} }
+    expect(await ctx.assembleBare(presentation)).toBe(presentation)
+    expect(errors).toEqual([])
+    dispose()
+  })
+
+  it('tells the caller when the offered set moved, so an outside presentation can follow it', async () => {
+    const ctx = new FakeAgentCtx()
+    const state = createActivationState()
+    ctx.innerTools = [tool('mcp__alpha__cold')]
+    let moves = 0
+    const dispose = wiring(ctx, () => state, () => undefined, () => [tool('mcp__alpha__cold')], {
+      onOfferedChanged: () => { moves += 1 },
+    })
+
+    const search = ctx.registered.get(SEARCH_TOOL_NAME) as ToolDefinitionLike
+    await search.execute({ query: 'alpha cold' }, {})
+
+    // One move for the activation itself. The context tier advances in the same
+    // assembly, and its window does not change, so it must not announce another.
+    expect(moves).toBe(1)
+    dispose()
+  })
 
   it('registers the search tool once and the assemble listener prepended, and disposes with the scope', () => {
     const ctx = new FakeAgentCtx()

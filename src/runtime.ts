@@ -31,16 +31,20 @@ import {
   DEFAULT_ACTIVATION_ENABLED,
   DEFAULT_ACTIVATION_MIN_CALLS,
   DEFAULT_ACTIVATION_SEEDED,
+  DEFAULT_TOOL_BUDGET_CHARS,
   DEFAULT_TOOL_IDLE_MS,
   SEARCH_TOOL_NAME,
+  autoPresentedNames,
   createActivationState,
   createAutoOfferState,
   installActivation,
   noteUse,
+  overToolBudget,
   presentedNames,
   pruneIdle,
   schemaChars,
   seedFromUsage,
+  surfaceChars,
   toolsFor,
 } from './activation.ts'
 import type {
@@ -1274,6 +1278,7 @@ export class ProjectMcpRuntime {
       }
     }
     policy.setPin(request.projectRoot, request.tool, request.pinned)
+    this.refreshPresentation(request.projectRoot)
     this.notify()
     return { ok: true, snapshot: this.snapshot() }
   }
@@ -1316,6 +1321,7 @@ export class ProjectMcpRuntime {
       }
     }
     policy.setMode(request.projectRoot, request.mode)
+    this.refreshPresentation(request.projectRoot)
     this.notify()
     return { ok: true, snapshot: this.snapshot() }
   }
@@ -1384,6 +1390,70 @@ export class ProjectMcpRuntime {
   private policyFor(projectRoot: string | undefined): ToolPolicy {
     if (projectRoot === undefined) return DEFAULT_TOOL_POLICY
     return this.options.policy?.forProject(projectRoot) ?? DEFAULT_TOOL_POLICY
+  }
+
+  /**
+   * Re-apply the presentation of every session working in one project.
+   *
+   * A pin or a mode is read live by the panel and by the guidance, but the
+   * forwarders carry their `deferLoading` flag from the pass that registered
+   * them, so the sessions of that project have to run one — off the caller's
+   * stack, like every other change note.
+   * @param projectRoot - the project whose policy just moved.
+   */
+  private refreshPresentation(projectRoot: string): void {
+    for (const state of this.states.values()) {
+      if (state.projectRoot !== projectRoot) continue
+      state.bridge?.batch.note()
+    }
+  }
+
+  /**
+   * The names one session's presentation offers the model right now.
+   *
+   * The counterpart of the assembly wiring's own `offeredNames`, read where the
+   * presentation lives outside that assembly — in the bridge's forwarders. It is
+   * the counter-seeded baseline, the session's activations, the context tier's
+   * window, and the project's pins; the same four sources the assembly-side
+   * `wanted` set is built from, so the two cannot drift.
+   * @param state - the session to read.
+   * @returns the offered public names.
+   */
+  private offeredNamesOf(state: AgentState): ReadonlySet<string> {
+    const names = new Set<string>(presentedNames(this.seedActivation(state)))
+    const auto = state.auto
+    if (auto !== undefined) for (const name of autoPresentedNames(auto)) names.add(name)
+    for (const pin of this.policyFor(state.projectRoot).pins) names.add(pin)
+    return names
+  }
+
+  /**
+   * The names one session presents as deferred: what it mounts that it does not
+   * offer.
+   *
+   * Empty when there is nothing to defer — activation off, `direct`, or a
+   * surface that fits the budget — because deferring a schema the request would
+   * have carried anyway only makes the declaration list harder to read, and the
+   * prefix-cache argument for it is gone. The budget is the same
+   * {@link surfaceChars} reading the panel and the assembly gate use, so the
+   * deferred set and the "hidden" number a panel shows are one decision.
+   * @param state - the session whose presentation is being registered.
+   * @returns the names whose forwarders carry `deferLoading`, in registry order.
+   */
+  private deferredNamesOf(state: AgentState): readonly string[] {
+    if (!(this.config.activationEnabled ?? DEFAULT_ACTIVATION_ENABLED)) return []
+    const policy = this.policyFor(state.projectRoot)
+    if (policy.mode === 'direct') return []
+    // The home's catalog, read without {@link mountedSchemas}: this runs inside a
+    // bridge pass, and that read syncs the very batch the pass is building.
+    const home = this.homeOf(state)
+    const mounted = home === undefined ? [] : this.schemasOf(home, state.agent.id)
+    if (policy.mode === 'disclosure') {
+      const budget = this.config.activationToolBudgetChars ?? DEFAULT_TOOL_BUDGET_CHARS
+      if (!overToolBudget(surfaceChars(mounted), budget)) return []
+    }
+    const offered = this.offeredNamesOf(state)
+    return mounted.map((schema) => schema.name).filter((name) => !offered.has(name))
   }
 
   /**
@@ -2884,13 +2954,15 @@ export class ProjectMcpRuntime {
           return undefined
         }
       },
-      register: (names) => {
+      deferred: () => this.deferredNamesOf(state),
+      register: (names, deferred) => {
         const project = state.project
         if (project === undefined) return () => undefined
         return forwardProjectTools({
           ctx: context,
           project: project.key,
           names,
+          deferred: (name) => deferred.has(name),
           registry,
         })
       },
@@ -3117,6 +3189,11 @@ export class ProjectMcpRuntime {
         // mode or pin stored from the panel applies from the next model step on
         // without re-minting the scope the listener lives in.
         policy: () => this.policyFor(state.projectRoot),
+        // The presentation lives in this session's own forwarders (they carry
+        // `deferLoading`), so every move of the offered set re-applies it there.
+        // `note` and not `sync`: the pass belongs off the caller's stack, and a
+        // burst of activation settles in one queued pass.
+        onOfferedChanged: () => state.bridge?.batch.note(),
         // The step the session is on, read when a search activates names: the
         // wiring keeps no counter of its own, because an activation outlives
         // the scope the wiring lives in and its stamp has to outlive it too.

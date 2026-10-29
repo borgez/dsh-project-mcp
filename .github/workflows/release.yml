@@ -198,6 +198,12 @@ jobs:
       contents: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # This job deliberately borrows no checkout: it only dispatches and
+      # follows. `gh` therefore has no git remote to name the repository from,
+      # and `gh workflow run` fails with `fatal: not a git repository` before it
+      # even reaches the API. `GH_REPO` is the documented answer — the same one
+      # every job in this repository needs wherever it runs without a checkout.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Dispatch the publish for the tag that was just cut
         id: dispatch

@@ -152,6 +152,13 @@ export interface AgentEventLike {
   agent: AgentLike
   /** `agent/status` only: whether a turn is currently running. */
   status?: 'idle' | 'running'
+  /**
+   * `agent/pre-step` only: the model selection this step captured. Read to ask
+   * the llm service what the route can do — a hand-declared provider cannot take
+   * tool declarations after the first request, and the presentation has to know
+   * before it decides how to hide anything.
+   */
+  modelSelection?: { readonly provider: string; readonly model: string }
 }
 
 /** The subset of the hosting scope used here. */
@@ -779,6 +786,27 @@ interface AgentState {
    * state outlives an idle release.
    */
   auto: AutoOfferState | undefined
+  /**
+   * Identity of the model route the last resolved {@link AgentState.toolUpdate}
+   * belongs to, as `provider/model`. A selection change re-asks the llm service
+   * and nothing else does, so a session keeps one answer per route.
+   */
+  routeKey: string | undefined
+  /**
+   * Whether this session's route accepts tool declarations after its first
+   * request (`LlmResolvedModelInfo.toolUpdate`), read from the llm service on
+   * `agent/pre-step`.
+   *
+   * `undefined` until a route is resolved. `true` lets the presentation hide a
+   * tool behind `deferLoading` — declared, invisible, still callable. `false`
+   * means the harness sends the whole declaration list in the first request of
+   * every series, so a deferred tool is not hidden at all: it costs its schema
+   * and the presentation must not declare it, which is what makes its name
+   * reachable only through the discovery tool. The difference is the difference
+   * between "hidden but callable" and "not there", and only the route decides
+   * which one is even possible.
+   */
+  toolUpdate: boolean | undefined
 }
 
 interface CachedDocument {
@@ -1428,6 +1456,52 @@ export class ProjectMcpRuntime {
   }
 
   /**
+   * Ask the llm service what the session's current route can do with tool
+   * declarations, and re-present the session when the answer moves.
+   *
+   * One answer per route, keyed by `provider/model`: the service resolves it from
+   * the adapter, which is not something to ask on every step. `toolUpdate` is the
+   * one capability read here — `undefined` on a route means the harness sends the
+   * complete current declaration list in every request and strips the deferral
+   * marker, so the presentation cannot hide a tool that way at all.
+   *
+   * A service that is absent (a host without `ctx.llm`, a test composition) or an
+   * answer that never arrives leaves the capability `undefined`, and the
+   * presentation keeps the deferral path it shipped with rather than guessing.
+   * @param state - the session whose route is being read.
+   * @param selection - the step's captured selection; absent resolves nothing.
+   */
+  private async resolveRoute(
+    state: AgentState,
+    selection: AgentEventLike['modelSelection'],
+  ): Promise<void> {
+    if (selection === undefined || this.disposed) return
+    const key = `${selection.provider}/${selection.model}`
+    if (state.routeKey === key) return
+    state.routeKey = key
+    const llm = this.ctx.get('llm') as
+      | { resolveModelInfo?: (provider: string, model: string) => Promise<{ toolUpdate?: unknown }> }
+      | undefined
+    if (typeof llm?.resolveModelInfo !== 'function') return
+    try {
+      const info = await llm.resolveModelInfo(selection.provider, selection.model)
+      const supported = info?.toolUpdate !== undefined
+      if (supported === state.toolUpdate) return
+      state.toolUpdate = supported
+      // The presentation is built from this answer, so a route that changed its
+      // mind — or a session that was mounted before its first step — re-presents
+      // on the queue rather than inside whoever asked.
+      state.bridge?.batch.note()
+    } catch (error) {
+      // A route that cannot describe itself is not a reason to fail a session;
+      // the previous answer (or none) stands.
+      this.ctx.logger.debug?.(
+        `project-mcp: reading the model route of session ${state.agent.id} failed: ${errorText(error)}`,
+      )
+    }
+  }
+
+  /**
    * The names one session presents as deferred: what it mounts that it does not
    * offer.
    *
@@ -1442,6 +1516,11 @@ export class ProjectMcpRuntime {
    */
   private deferredNamesOf(state: AgentState): readonly string[] {
     if (!(this.config.activationEnabled ?? DEFAULT_ACTIVATION_ENABLED)) return []
+    // A route without tool updates would send a deferred schema anyway (the
+    // harness strips the marker), so "deferred" there means "declared": the
+    // presentation gives way to the forwarder list itself, which carries only
+    // what is offered.
+    if (state.toolUpdate === false) return []
     const policy = this.policyFor(state.projectRoot)
     if (policy.mode === 'direct') return []
     // The home's catalog, read without {@link mountedSchemas}: this runs inside a
@@ -1827,6 +1906,8 @@ export class ProjectMcpRuntime {
       activationDispose: undefined,
       guidanceDispose: undefined,
       auto: undefined,
+      routeKey: undefined,
+      toolUpdate: undefined,
     }
   }
 
@@ -2207,6 +2288,10 @@ export class ProjectMcpRuntime {
         state.step += 1
         if (!this.disposed) {
           this.touch(state, { activate: true })
+          // Route capability is asked for off this path: it is network-shaped on
+          // some adapters, and a project MCP server is never a reason to hold up
+          // an agent step.
+          void this.resolveRoute(state, event.modelSelection)
           await this.awaitActivation(state)
         }
       }
@@ -2940,11 +3025,21 @@ export class ProjectMcpRuntime {
         // pass would forward names this session's project never published.
         if (project === undefined) return undefined
         try {
-          return projectToolNames(
+          const names = projectToolNames(
             project.key,
             (scope) => this.bridgeSchemas(scope),
             servers(),
           )
+          // A route that cannot take declarations after its first request cannot
+          // carry a deferred tool either: the marker would be stripped and the
+          // schema sent. So the forwarder list itself becomes the presentation —
+          // only what the session offers is registered, and the discovery tool is
+          // how the model gets another one for the next step.
+          if (state.toolUpdate === false) {
+            const offered = this.offeredNamesOf(state)
+            return names.filter((name) => offered.has(name))
+          }
+          return names
         } catch (error) {
           // A probe that failed says nothing about the project's set: the batch
           // it could not describe is the batch that stays live.
@@ -3434,6 +3529,10 @@ export class ProjectMcpRuntime {
         deferred,
         mostUsed,
         activationEnabled,
+        // Where the route cannot declare a tool after the first request, the
+        // names line below must send the model through the search instead of
+        // promising a call that would answer "unknown tool".
+        directCalls: state.toolUpdate !== false,
       })
     } catch (error) {
       this.ctx.logger.warn(

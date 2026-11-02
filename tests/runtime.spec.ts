@@ -294,8 +294,14 @@ class FakeScope implements AgentScopeLike {
    * runs to completion before the continuation, so the runtime's own
    * bookkeeping for the step is done by the time this returns.
    */
-  async step(agent: AgentLike): Promise<void> {
-    await this.dispatch('agent/pre-step', { agent }, async () => undefined)
+  async step(
+    agent: AgentLike,
+    modelSelection?: { provider: string; model: string },
+  ): Promise<void> {
+    await this.dispatch('agent/pre-step', {
+      agent,
+      ...(modelSelection === undefined ? {} : { modelSelection }),
+    }, async () => undefined)
   }
 
   /** Awaited waterfall call, as `dispatch.waterfall` delivers a hook. */
@@ -325,6 +331,12 @@ function harness(
   reserved: string[] = [],
   overrides: Partial<RuntimeConfig> = {},
   extraEntries: LoaderEntryStub[] = [],
+  /**
+   * What the llm service answers about the session's route. Absent means the
+   * host publishes no `llm` service at all, which is the shipped degradation:
+   * the capability stays unknown and the presentation keeps its deferral path.
+   */
+  route?: { toolUpdate?: string },
 ) {
   /**
    * Activation failure armed for the project scopes this runtime mints next. A
@@ -414,18 +426,23 @@ function harness(
         }))
       },
     },
-    get: (name: string) =>
-      name === 'loader'
-        ? {
-            entries: () => [
-              ...reserved.map((serverName) => ({
-                options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName } },
-                fiber: { state: 2 },
-              })),
-              ...extraEntries,
-            ],
-          }
-        : undefined,
+    get: (name: string) => {
+      if (name === 'loader') {
+        return {
+          entries: () => [
+            ...reserved.map((serverName) => ({
+              options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName } },
+              fiber: { state: 2 },
+            })),
+            ...extraEntries,
+          ],
+        }
+      }
+      if (name === 'llm' && route !== undefined) {
+        return { resolveModelInfo: async () => route }
+      }
+      return undefined
+    },
   }
   // A real store on a throwaway document: the choice tests need the durable
   // path, and the rest of the suite never looks at it.
@@ -689,6 +706,45 @@ describe('ProjectMcpRuntime', () => {
     await ctx?.callTool(SEARCH_TOOL_NAME, { query: 'alpha' })
     await sleep(1)
     expect(forwarded('mcp__alpha__tool')?.deferLoading).toBeUndefined()
+    expect(await ctx?.callTool('mcp__alpha__tool', {})).toEqual({ server: 'alpha' })
+  })
+
+  it('forwards only what it offers on a route that cannot declare a tool later', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    // A hand-declared provider resolves without `toolUpdate`: the harness strips
+    // the deferral marker and sends the whole declaration list, so marking a
+    // tool deferred there would cost its schema and hide nothing.
+    const { runtime, scopes } = harness([], { activationToolBudgetChars: 0 }, [], {})
+    const { agent } = fakeAgent('session-1', project.session)
+    bindScopeParent(agent, { agentPreset: 'standard' })
+    const scope = new FakeScope([agent])
+    runtime.attach(scope)
+    await runtime.syncNow()
+
+    const ctx = scopes.doubleOf(agent)
+    const forwarded = (): string[] => [...(ctx?.forwarded.keys() ?? [])]
+    /** The registered forwarder of one name, as the registry resolves it. */
+    const definitionOf = (name: string): { deferLoading?: true } | undefined =>
+      ctx?.forwarded.get(name)?.definition as { deferLoading?: true } | undefined
+    // The mount runs before any step, so the route is still unknown and the
+    // session starts on the deferral path: declared, marked, one fat request.
+    expect(forwarded()).toEqual(['mcp__alpha__tool'])
+    expect(definitionOf('mcp__alpha__tool')?.deferLoading).toBe(true)
+
+    // The first step is where the route is learned; the queued pass then drops
+    // the forwarder entirely, because a marker this route strips would leave the
+    // schema in the request and hide nothing.
+    await scope.step(agent, { provider: 'litellm', model: 'deepseek/deepseek-v4-flash' })
+    await sleep(1)
+    expect(forwarded()).toEqual([])
+
+    // The discovery tool is the only way in: it activates the name, and the
+    // queued pass registers exactly that one forwarder for the next step.
+    await ctx?.callTool(SEARCH_TOOL_NAME, { query: 'alpha' })
+    await sleep(1)
+    expect(forwarded()).toEqual(['mcp__alpha__tool'])
+    // Registered, so it is a normal declaration — no marker to strip.
+    expect(ctx?.forwarded.get('mcp__alpha__tool')?.definition).not.toHaveProperty('deferLoading')
     expect(await ctx?.callTool('mcp__alpha__tool', {})).toEqual({ server: 'alpha' })
   })
 

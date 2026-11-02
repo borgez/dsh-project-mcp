@@ -89,6 +89,24 @@ describe('buildGuidance', () => {
     expect(text).toContain('callable from the next step')
   })
 
+  it('sends the model through the search when the route cannot declare a tool later', () => {
+    // A hand-declared provider resolves without `toolUpdate`: a deferred tool is
+    // not declared at all there, so the direct-call sentence would promise a call
+    // that answers "unknown tool".
+    const text = buildGuidance({
+      servers: [server('tglider', { tools: ['search'] })],
+      offered: [],
+      deferred: ['search'],
+      activationEnabled: true,
+      directCalls: false,
+    })
+
+    expect(text).toContain('On demand right now: search')
+    expect(text).toContain('none of them is in this request')
+    expect(text).toContain('callable from the next step')
+    expect(text).not.toContain('`mcp__<server>__<tool>`')
+  })
+
   it('uses code-unit name order, so equal content yields equal text', () => {
     const first = buildGuidance({ project: 'p', servers: [server('beta'), server('alpha')] })
     const second = buildGuidance({ project: 'p', servers: [server('alpha'), server('beta')] })

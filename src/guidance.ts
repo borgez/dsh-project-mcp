@@ -95,6 +95,17 @@ export interface GuidanceInput {
   readonly mostUsed?: readonly string[]
   /** Whether the on-demand search surface is on; defaults to the activation default. */
   readonly activationEnabled?: boolean
+  /**
+   * Whether a deferred tool can still be called by its exact full name.
+   *
+   * It can on a route that accepts tool declarations after the first request:
+   * the schema is hidden from the model and the registry keeps the tool
+   * admitted, so `mcp__server__tool` executes. On a route without that
+   * capability the tool is simply not declared, and a call by name answers
+   * "unknown tool" — the names line must then send the model through the search
+   * instead of promising the call. Defaults to `true`, the shipped capability.
+   */
+  readonly directCalls?: boolean
 }
 
 /**
@@ -134,7 +145,7 @@ export function buildGuidance(input: GuidanceInput): string {
   if (activationEnabled && hot !== '') tail.push('', hot)
   if (deferred.size > 0) {
     tail.push('', onDemandParagraph(offered.size, deferred.size))
-    tail.push('', hiddenNamesLine(deferred))
+    tail.push('', hiddenNamesLine(deferred, input.directCalls ?? true))
   }
   const bullets: string[] = []
   let hidden = 0
@@ -314,17 +325,32 @@ function serverBullet(server: GuidanceServer): string {
  * deduped, truncated to {@link MAX_GUIDANCE_HIDDEN_NAMES} with a `+N more`.
  * Descriptions and schemas are the expensive part, so the line carries names
  * only — the model picks the one it needs and runs a single targeted search
- * instead of rephrasing blind guesses. The sentence also states the
- * direct-call contract: deferral trims the assembled request list, it never
- * unregisters the tool, so a call by the exact full name still executes;
- * searching the name first is how the model sees the description and
- * parameters, not a gate.
+ * instead of rephrasing blind guesses.
+ *
+ * The tail sentence is the one place the route changes the advice. Where the
+ * harness can declare a tool after the first request, deferral only trims the
+ * request list — the tool stays registered, so a call by its exact full name
+ * still executes and the search is how the model reads the description, not a
+ * gate. Where it cannot, the tool is not declared at all: the name no longer
+ * exists for the turn, and the model has to search first, so promising the
+ * direct call there would send it into an "unknown tool" error.
+ * @param deferred - names reachable only through the discovery tool right now.
+ * @param directCalls - whether an exact-name call still executes (§
+ * `GuidanceInput.directCalls`).
+ * @returns one line, or an empty string when nothing is deferred.
  */
-function hiddenNamesLine(deferred: ReadonlySet<string>): string {
+function hiddenNamesLine(deferred: ReadonlySet<string>, directCalls: boolean): string {
   const names = [...deferred].sort(compareNames)
   const shown = names.slice(0, MAX_GUIDANCE_HIDDEN_NAMES)
   const hidden = names.length - shown.length
   const list = hidden === 0 ? shown.join(', ') : `${shown.join(', ')} +${hidden} more`
+  if (!directCalls) {
+    return (
+      `On demand right now: ${list} — none of them is in this request, so ask for one with ` +
+      `\`${SEARCH_TOOL_NAME}\` (a keyword or the name) and it becomes callable from the next ` +
+      'step on.'
+    )
+  }
   return (
     `On demand right now: ${list} — every one of them runs when called by its exact full ` +
     `name \`mcp__<server>__<tool>\`; search a name with \`${SEARCH_TOOL_NAME}\` first to see ` +

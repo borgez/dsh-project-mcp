@@ -448,6 +448,21 @@ the flags level — a search activation, a compaction boundary, a context advanc
 and a policy edit each queue one coalesced bridge pass (`ForwardBatch.note`), and
 a pass re-registers only when the names *or* the deferred subset moved.
 
+**The route decides which of the two is even possible.** `deferLoading` only
+hides a schema from a route that accepts tool declarations after its first
+request (`LlmResolvedModelInfo.toolUpdate`, which the adapter reports and which
+only catalog models declare): on a hand-declared provider — a custom
+`llm-pi-ai` route, say — the harness strips the marker and sends the complete
+declaration list, so a "deferred" tool costs its schema and hides nothing. The
+runtime asks the `llm` service once per session route and re-presents on that
+answer: where the capability is absent, the session's forwarders carry **only
+the offered names**, the rest are not registered at all, and `mcp_search_tools`
+is what makes one callable from the next step. The guidance says so in the same
+words — its names line promises an exact-name call only where the tool is still
+registered — and the per-session panel keeps reporting both tiers either way.
+The first request of a session is always the wide one: the route is learned on
+the first step, and the pass that follows trims the layer.
+
 On an older harness the same module still rewrites the assembly list, through the
 agent's own `system-prompt/assemble` waterfall, registered *prepended* so it runs
 outermost and sees the list after other presentation plugins (for example

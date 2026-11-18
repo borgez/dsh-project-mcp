@@ -50,6 +50,8 @@ describe('parseDocument', () => {
       env: {},
       cwd: '/proj',
       toolCallTimeoutMs: 60_000,
+      closeTimeoutMs: 5000,
+      expandTemplates: false,
       failOnStartupError: false,
     })
   })
@@ -62,6 +64,8 @@ describe('parseDocument', () => {
       url: 'http://localhost:8080/mcp',
       headers: { Authorization: 'Bearer x' },
       toolCallTimeoutMs: 60_000,
+      closeTimeoutMs: 5000,
+      expandTemplates: false,
       failOnStartupError: false,
     })
   })

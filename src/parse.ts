@@ -38,6 +38,9 @@ const INPUT_PREFIX = 'input:'
 /** Maximum length of a generated `serverName`. */
 const MAX_SERVER_NAME_LENGTH = 32
 
+/** `closeTimeoutMs` of a resolved mcp-client config; the client's own schema default, never overridden here. */
+const MCP_CLOSE_TIMEOUT_MS = 5000
+
 /** Severity of a parse diagnostic. */
 export type IssueLevel = 'error' | 'warning'
 
@@ -436,6 +439,10 @@ function buildStdioEntry(
       env: expandedEnv.value,
       cwd: expandedCwd.value,
       toolCallTimeoutMs: ctx.toolCallTimeoutMs,
+      closeTimeoutMs: MCP_CLOSE_TIMEOUT_MS,
+      // This parser expands `${input:…}` itself and hands literals to the
+      // client, so the client's own `${credential:…}` templates stay off.
+      expandTemplates: false,
       failOnStartupError: ctx.failOnStartupError,
     },
   }
@@ -471,6 +478,8 @@ function buildHttpEntry(
       url: expandedUrl.value,
       headers: expandedHeaders.value,
       toolCallTimeoutMs: ctx.toolCallTimeoutMs,
+      closeTimeoutMs: MCP_CLOSE_TIMEOUT_MS,
+      expandTemplates: false,
       failOnStartupError: ctx.failOnStartupError,
     },
   }

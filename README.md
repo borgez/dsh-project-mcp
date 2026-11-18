@@ -460,6 +460,12 @@ the offered names**, the rest are not registered at all, and `mcp_search_tools`
 is what makes one callable from the next step. The guidance says so in the same
 words — its names line promises an exact-name call only where the tool is still
 registered — and the per-session panel keeps reporting both tiers either way.
+Both lines are also judged against the step's own admission: `systemPrompt`
+hands a section the context its step was prepared with, including the `toolSet`
+`ctx.tools.resolve()` froze, and a tool registered between that snapshot and the
+prompt assembly (a server that just connected) is named by the registry but not
+callable in that step — so the section leaves it out rather than promising a
+call that would answer `unknown tool`.
 The first request of a session is always the wide one: the route is learned on
 the first step, and the pass that follows trims the layer.
 
@@ -526,7 +532,9 @@ description and parameters.
   probing blindly. The line also states the direct-call contract — deferral
   trims the assembled request list, it never unregisters the tool, so a call by
   the exact full name `mcp__<server>__<tool>` still executes; searching first
-  is how the model sees the description and parameters, not a gate.
+  is how the model sees the description and parameters, not a gate. A name the
+  step did not admit is not listed at all, so the line never promises more than
+  the step's own tool set can answer.
 - **A most-used line from the durable counters.** When the seeded baseline is
   non-empty, the section names the project's hot tools (most-called first, up
   to four names with `+N more`) and says they are offered from the first step

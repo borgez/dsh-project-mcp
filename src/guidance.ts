@@ -200,8 +200,42 @@ export interface GuidanceSectionLike {
   readonly order: number
   /** `false` preserves literal text; this section carries no variables. */
   readonly interpolate?: boolean
-  /** Text, or a provider evaluated at each assembly. */
-  readonly text: string | (() => string)
+  /** Text, or a provider evaluated at each assembly with that assembly's context. */
+  readonly text: string | ((assembly?: GuidanceAssemblyLike) => string)
+}
+
+/**
+ * The assembly-context slice this wiring reads: the step's frozen tool
+ * admission.
+ *
+ * `systemPrompt.assemble()` hands sections the same context the step was
+ * prepared with, including the `toolSet` that `ctx.tools.resolve()` produced —
+ * the definitions admitted for *this* step. Naming a tool in the guidance text
+ * while it is absent from that snapshot is the one way the section can promise
+ * a call that answers `unknown tool`, so the text is filtered against it.
+ * Declared structurally, like every other harness type in this module.
+ */
+export interface GuidanceAssemblyLike {
+  /** Scope whose providers participate; `toolSet.view()` admits only this exact key. */
+  readonly scope?: unknown
+  /** Step-owned admission; absent on an older host or a bare test stub. */
+  readonly toolSet?: { view(scope: unknown): ReadonlyMap<string, unknown> }
+}
+
+/**
+ * The public tool names this step's admission actually carries.
+ *
+ * @param assembly - the section's assembly context, when the host hands one.
+ * @returns the admitted names, or `undefined` when there is no snapshot to
+ *   judge by — then nothing is filtered and the text is built from live state.
+ */
+export function admittedNames(assembly?: GuidanceAssemblyLike): ReadonlySet<string> | undefined {
+  const set = assembly?.toolSet
+  const scope = assembly?.scope
+  // `ResolvedToolSet.view()` admits only the exact requesting agent, so an
+  // assembly without its own scope has no admission this text may compare to.
+  if (set === undefined || scope === undefined) return undefined
+  return new Set(set.view(scope).keys())
 }
 
 /** The `systemPrompt` slice the wiring reads (structural view). */
@@ -245,8 +279,12 @@ export interface GuidanceContextLike {
 export interface GuidanceWiringOptions {
   /** Agent-scoped context; the section lives here. */
   readonly ctx: GuidanceContextLike
-  /** Live section text; called at every assembly, so it may read changing state. */
-  readonly text: () => string
+  /**
+   * Live section text; called at every assembly, so it may read changing state.
+   * The assembly context is passed through, so the text can judge its promises
+   * against that step's admission ({@link admittedNames}).
+   */
+  readonly text: (assembly?: GuidanceAssemblyLike) => string
   /** Section name override; defaults to {@link GUIDANCE_SECTION_NAME}. */
   readonly name?: string
   /** Sink for a contained failure of this plugin's own work. */

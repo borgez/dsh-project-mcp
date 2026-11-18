@@ -23,10 +23,12 @@ import {
   MAX_GUIDANCE_SERVERS,
   MAX_GUIDANCE_HIDDEN_NAMES,
   buildGuidance,
+  admittedNames,
   installGuidance,
   projectLabel,
 } from '../src/guidance.ts'
 import type {
+  GuidanceAssemblyLike,
   GuidanceContextLike,
   GuidancePromptScopeLike,
   GuidanceSectionLike,
@@ -55,9 +57,15 @@ function server(name: string, overrides: Partial<GuidanceServer> = {}): Guidance
   return { name, status: 'active', transport: 'stdio', ...overrides }
 }
 
-function textOf(section: GuidanceSectionLike | undefined): string {
+function textOf(section: GuidanceSectionLike | undefined, assembly?: GuidanceAssemblyLike): string {
   if (section === undefined) throw new Error('the guidance section was not registered')
-  return typeof section.text === 'function' ? section.text() : section.text
+  return typeof section.text === 'function' ? section.text(assembly) : section.text
+}
+
+/** One assembly context whose step admitted exactly `names`, for `scope`. */
+function admission(names: Record<string, unknown>, scope: unknown): GuidanceAssemblyLike {
+  const admitted = new Map(Object.entries(names))
+  return { scope, toolSet: { view: (asked) => (asked === scope ? admitted : new Map()) } }
 }
 
 describe('buildGuidance', () => {
@@ -613,6 +621,27 @@ function fakeAgent(id: string, cwd: string, ctx: FakeAgentCtx): AgentLike {
   return { id, session: { header: { cwd } }, ctx: ctx as unknown as Context }
 }
 
+describe('admittedNames', () => {
+  it('reports no snapshot instead of an empty admission', () => {
+    // An older host, a bare stub, or an assembly without its scope: there is
+    // nothing to judge by, so the text keeps being built from live state.
+    expect(admittedNames()).toBeUndefined()
+    expect(admittedNames({ scope: {} })).toBeUndefined()
+    expect(admittedNames({ toolSet: { view: () => new Map() } })).toBeUndefined()
+  })
+
+  it("reads the admission for the assembly's own scope only", () => {
+    const scope = {}
+    const toolSet = {
+      view: (asked: unknown) =>
+        asked === scope ? new Map([['mcp__alpha__tool', {}]]) : new Map<string, unknown>(),
+    }
+    expect([...(admittedNames({ scope, toolSet }) ?? [])]).toEqual(['mcp__alpha__tool'])
+    // `ResolvedToolSet.view()` admits only the exact requesting agent.
+    expect([...(admittedNames({ scope: {}, toolSet }) ?? [])]).toEqual([])
+  })
+})
+
 describe('runtime guidance wiring', () => {
   it('registers a live section that describes the session project without an absolute path', async () => {
     const project = makeProject({ alpha: { command: 'npx' } })
@@ -634,6 +663,60 @@ describe('runtime guidance wiring', () => {
     expect(text).not.toContain(project.root)
 
     await runtime.disposeAll()
+  })
+
+  it('names only what the step admitted, not what a late sync published', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    const runtime = runtimeFor()
+    const ctx = new FakeAgentCtx()
+    const agent = fakeAgent('session-1', project.session, ctx)
+    runtime.attach(new FakeScope([agent]))
+    await runtime.syncNow()
+    const section = ctx.systemPrompt.sections.get(GUIDANCE_SECTION_NAME)
+    // No snapshot (an older host, a bare stub): the live registry is all there is.
+    expect(textOf(section)).toContain('On demand right now: tool')
+
+    // A step prepared before the mount settled admitted nothing: naming the tool
+    // would promise a call that step answers with "unknown tool".
+    expect(textOf(section, admission({}, agent))).not.toContain('On demand right now')
+    // The mount bullet is a fact about the server, not a callability promise.
+    expect(textOf(section, admission({}, agent))).toContain('- alpha (stdio, active)')
+
+    // The next step's admission carries the name again, and the line returns.
+    expect(textOf(section, admission({ 'mcp__alpha__tool': {} }, agent))).toContain(
+      'On demand right now: tool',
+    )
+
+    await runtime.disposeAll()
+  })
+
+  it('withholds the most-used line when the step admitted none of those tools', async () => {
+    const project = makeProject({ alpha: { command: 'npx' } })
+    const usageFile = join(mkdtempSync(join(tmpdir(), 'project-mcp-guidance-')), 'usage.json')
+    created.push(usageFile.slice(0, usageFile.lastIndexOf('/')))
+    const store = new UsageStore({ file: usageFile, flushMs: 60_000 })
+    for (let index = 0; index < 2; index += 1) {
+      store.record({
+        projectRoot: project.root,
+        serverName: 'alpha',
+        tool: 'tool',
+        isError: false,
+        at: AT + index,
+        sessionId: 'session-one',
+      })
+    }
+    const runtime = runtimeFor({ activationMinCalls: 2 }, { usage: store })
+    const ctx = new FakeAgentCtx()
+    const agent = fakeAgent('session-1', project.session, ctx)
+    runtime.attach(new FakeScope([agent]))
+    await runtime.syncNow()
+
+    const section = ctx.systemPrompt.sections.get(GUIDANCE_SECTION_NAME)
+    expect(textOf(section)).toContain("Most used in this project's sessions")
+    expect(textOf(section, admission({}, agent))).not.toContain('Most used')
+
+    await runtime.disposeAll()
+    store.dispose()
   })
 
   it('names the counter-seeded baseline in the live section at session start', async () => {

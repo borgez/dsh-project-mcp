@@ -64,11 +64,12 @@ import {
 } from './discovery.ts'
 import {
   DEFAULT_GUIDANCE_ENABLED,
+  admittedNames,
   buildGuidance,
   installGuidance,
   projectLabel,
 } from './guidance.ts'
-import type { GuidanceContextLike, GuidanceServer } from './guidance.ts'
+import type { GuidanceAssemblyLike, GuidanceContextLike, GuidanceServer } from './guidance.ts'
 // The volatile key list lives at the entry (`src/index.ts`) because the schema
 // declares it; the import cycles back here, but it is read only inside
 // `applyLiveConfig`, long after both modules finished evaluating.
@@ -3256,7 +3257,7 @@ export class ProjectMcpRuntime {
       try {
         state.guidanceDispose = installGuidance({
           ctx: scope.ctx as unknown as GuidanceContextLike,
-          text: () => this.guidanceText(agent, state),
+          text: (assembly) => this.guidanceText(agent, state, assembly),
           onError: (error) => {
             this.ctx.logger.warn(
               `project-mcp: guidance section failed for session ${agent.id}: ${errorText(error)}`,
@@ -3477,14 +3478,25 @@ export class ProjectMcpRuntime {
    *
    * It reads the mount records and the registry at every assembly, so a rescan
    * that mounted or dropped a server — and a search that activated a tool — are
-   * reflected without re-registering the section. Total: any failure returns the
-   * empty string, because a section that throws would fail the model request
-   * that asked for the assembly.
+   * reflected without re-registering the section. The assembly's own admission
+   * snapshot is authoritative when it is present: a tool registered after the
+   * step was prepared is already named by the registry but cannot be called in
+   * that step, so the text does not promise it ({@link admittedNames}). Total:
+   * any failure returns the empty string, because a section that throws would
+   * fail the model request that asked for the assembly.
+   *
+   * @param agent - session whose scope the section belongs to.
+   * @param state - the session's live state.
+   * @param assembly - the assembly context, when the host hands one.
+   * @returns the section text, or `''` when there is nothing true to say.
    */
-  private guidanceText(agent: AgentLike, state: AgentState): string {
+  private guidanceText(agent: AgentLike, state: AgentState, assembly?: GuidanceAssemblyLike): string {
     try {
       const projectRoot = state.projectRoot
       if (projectRoot === undefined || this.mountsOf(state).size === 0) return ''
+      // The step's frozen admission, when the host carries one: everything named
+      // below is a callability promise, and only an admitted name can keep it.
+      const admitted = admittedNames(assembly)
       const activationEnabled = this.config.activationEnabled ?? DEFAULT_ACTIVATION_ENABLED
       // With activation on, the presented set is the session's counter baseline
       // plus its activations; with it off, the registry lists every tool.
@@ -3497,6 +3509,7 @@ export class ProjectMcpRuntime {
       const offered: string[] = []
       const deferred: string[] = []
       for (const schema of this.mountedSchemas(state)) {
+        if (admitted !== undefined && !admitted.has(schema.name)) continue
         const server = matchServer(schema.name, mounted)
         if (server === undefined) continue
         const name = schema.name.slice(`mcp__${server}__`.length)
@@ -3518,6 +3531,7 @@ export class ProjectMcpRuntime {
       const mostUsed: string[] = []
       if (activationEnabled) {
         for (const fullName of this.seedActivation(state).baseline) {
+          if (admitted !== undefined && !admitted.has(fullName)) continue
           const server = matchServer(fullName, mounted)
           if (server !== undefined) mostUsed.push(fullName.slice(`mcp__${server}__`.length))
         }

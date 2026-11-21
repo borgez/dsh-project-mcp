@@ -1,0 +1,48 @@
+diff --git a/lib/types/generation.js b/lib/types/generation.js
+index 1111111..2222222 100644
+--- a/lib/types/generation.js
++++ b/lib/types/generation.js
+@@ -82,6 +82,35 @@ export class McpGeneration {
+      * Cancel callers, close the transport, and await owned work within the cleanup budget.
+      * @returns the shared cleanup result, distinguishing transport closure from cleanup failure.
+      */
++    /**
++     * End the server-side session when the transport keeps one.
++     *
++     * A streamable-HTTP MCP server holds a stateful session per Mcp-Session-Id
++     * until the client sends DELETE (or the server expires it). Closing the
++     * transport alone only aborts the stream, so an idle unmount of a lazily
++     * mounted server would leak one session per sleep/wake cycle. Best effort
++     * and bounded: a server may refuse termination (405) or be gone already,
++     * and a slow answer must not eat the cleanup budget.
++     */
++    async endSession() {
++        const transport = this.transport;
++        if (typeof transport?.terminateSession !== 'function')
++            return;
++        const budget = Math.min(this.closeTimeoutMs, 1500);
++        let timer;
++        try {
++            await Promise.race([
++                transport.terminateSession(),
++                new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('MCP session termination timed out')), budget); }),
++            ]);
++        }
++        catch {
++            // A server may refuse termination or be gone already; closure still proceeds.
++        }
++        finally {
++            clearTimeout(timer);
++        }
++    }
+     close() {
+         return this.closing ??= this.finish();
+     }
+@@ -89,6 +118,7 @@ export class McpGeneration {
+         this.lifetime.abort(new McpLocalError('MCP connection closed'));
+         let cleanupError;
+         const work = async () => {
++            await this.endSession();
+             try {
+                 await (this.client.transport === undefined ? this.transport?.close() : this.client.close());
+             }

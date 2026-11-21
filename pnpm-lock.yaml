@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@deepseek-ai/dsh-mcp-client@0.2.2-rc.4': ee96448c8219405cf11cf93daae99b22f0f40849ab982602930606a71636b48e
+
 importers:
 
   .:
@@ -17,7 +20,7 @@ importers:
         version: 4.1.0
       '@deepseek-ai/dsh-mcp-client':
         specifier: 0.2.2-rc.4
-        version: 0.2.2-rc.4(ef873f7b93ea5332a35dd549b09be580)
+        version: 0.2.2-rc.4(patch_hash=ee96448c8219405cf11cf93daae99b22f0f40849ab982602930606a71636b48e)(ef873f7b93ea5332a35dd549b09be580)
       '@deepseek-ai/dsh-scope':
         specifier: 0.2.2-rc.4
         version: 0.2.2-rc.4(@deepseek-ai/cordis@4.1.0)
@@ -1260,7 +1263,7 @@ snapshots:
       '@deepseek-ai/schemastery': 3.19.0
       zod: 4.6.6
 
-  '@deepseek-ai/dsh-mcp-client@0.2.2-rc.4(ef873f7b93ea5332a35dd549b09be580)':
+  '@deepseek-ai/dsh-mcp-client@0.2.2-rc.4(patch_hash=ee96448c8219405cf11cf93daae99b22f0f40849ab982602930606a71636b48e)(ef873f7b93ea5332a35dd549b09be580)':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0
       '@deepseek-ai/dsh-attachment': 0.2.2-rc.4(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-brand@0.2.2-rc.4(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-error@0.2.2-rc.4(@deepseek-ai/cordis@4.1.0))

@@ -29,7 +29,6 @@ import type {
   ToolFacts,
   ToolPolicy,
 } from '../types.ts'
-import type { ToastDraft } from './toasts.ts'
 import { STATUS_HINT, seedToolFacts } from './view.ts'
 
 /** Session the fixtures belong to; `shortSessionId` renders it as `8fce1c`. */
@@ -274,7 +273,7 @@ function mergedRows(variant: DesignVariant): ServerRow[] {
         row('gateway', 'error', 'stdio', DESIGN_FAILURE),
         row('playwright', 'connecting', 'stdio'),
         row('context7', 'conflict', 'streamable-http', 'the name is taken by a live profile-level instance'),
-        row('rider', 'idle', 'stdio', 'not mounted yet — this session has not started a turn (lazy mounting is on)'),
+        row('rider', 'idle', 'stdio', 'not mounted yet — no session holds this project'),
         row('legacy-gh', 'disabled', 'stdio'),
       ]
     case 'quiet':
@@ -283,7 +282,7 @@ function mergedRows(variant: DesignVariant): ServerRow[] {
     case 'direct':
       return [row('tglider', 'active', 'streamable-http')]
     case 'tools-absent':
-      return [row('tglider', 'idle', 'streamable-http', 'not mounted yet — this session has not started a turn (lazy mounting is on)')]
+      return [row('tglider', 'idle', 'streamable-http', 'not mounted yet — no session holds this project')]
     case 'empty':
     case 'no-project':
     case 'no-session':
@@ -460,35 +459,3 @@ export function designSessionId(variant: DesignVariant): string | undefined {
   return variant === 'no-session' ? undefined : DESIGN_SESSION
 }
 
-/**
- * The banners the design toast stack shows, one per lifecycle moment. Keyed
- * like the real drafts (`src/client/toasts.ts`), so the stand repaints its
- * banners in the shell's active language the same way the product does.
- */
-export const DESIGN_TOASTS: readonly ToastDraft[] = [
-  {
-    level: 'up',
-    server: 'playwright',
-    project: 'service',
-    textKey: 'toastUp',
-    textParams: { server: 'playwright' },
-    detail: 'service',
-  },
-  {
-    level: 'error',
-    server: 'gateway',
-    project: 'service',
-    textKey: 'toastFailed',
-    textParams: { server: 'gateway' },
-    detailKey: STATUS_HINT.error,
-    detail: DESIGN_FAILURE,
-  },
-  {
-    level: 'released',
-    server: 'rider',
-    project: 'service',
-    textKey: 'toastReleased',
-    textParams: { server: 'rider' },
-    detailKey: STATUS_HINT.idle,
-  },
-]

@@ -20,7 +20,6 @@ theme. Sections 8 and 9 are the map of value sources and the list of what exactl
 | A. The sidebar tab | DSH's own right sidebar, one page per pane | `src/client/view.ts` (`ProjectMcpPanel`, `view.ts:1093`) | the `sidebarRightTabs` registry plus the keyed `sidebar.right.pane.tab` and `sidebar.right.pane.tab.title` seats (`src/client/sidebar-tab.ts`), type id `dsh-project-mcp:servers` (`src/shared.ts:17`), kind `project-mcp`, guide entry order 55 |
 | A′. The tab's settings popup | opened from one row of the tab chip's actions menu, drawn in the frame's floating layer | `src/client/view.ts` (`ProjectMcpSettings`, `view.ts:2441`) | the `sidebar.right.tab.menu.item` slot, id `dsh-project-mcp:settings`, order 60, plus the `shell.overlay` entry id `dsh-project-mcp:settings-dialog`, order 61 (`src/client/sidebar-tab.ts`) |
 | B. The page in the native settings | a separate settings navigation item | `src/client/settings.ts` (`SettingsPage`, `settings.ts:1996`), `src/client/settings-tools.ts` (`ToolsPage`) | the `settings.section` slot, id `project-mcp`, order 900 (`settings.ts:289-299, 380-395`) |
-| T. Toasts | the frame layer | `src/client/toasts.ts` (`ToastStack`) | the `shell.overlay` slot, id `dsh-project-mcp:toasts`, order 60 (`toasts.ts:41-47`) |
 | C. The Plugins-page config card | the Plugins manager page, the bundle's detail | `src/client/plugin-config.ts` (`PluginConfigCard`, `plugin-config.ts:374`) | the `plugins.bundle.config` slot, key = package name (`registerPluginConfigCard`, `plugin-config.ts:697`), registered only while `configForms.whileServed` serves a namespace (`src/client/index.ts:178-185`) |
 
 Surface C is **host-embedded**: the Plugins page is the harness's own and draws the section
@@ -424,14 +423,12 @@ for a global document a consent checkbox, the `Write document` and `Cancel` butt
   body — the visible tools' names (the pinned ones marked) — and `hidden {count} · ≈ {tokens} tokens saved`;
   when there is no offer — `no offer published by session yet`.
 
-## 4. Surface T — toasts
+## 4. Surface T — removed
 
-The stack in the frame layer: `position:absolute; top:12px; left:50%; transform:translateX(-50%)`,
-`gap:8`, at most 3 banners. A banner (`toasts.ts:378`): the tone dot (8 px,
-`border-radius:999px`), the event text and one detail line (`opacity:.75`, 12 px). The tones:
-`up` → success, `error` → error, `released` → tertiary. The texts: `{server} up` /
-`{server} failed` / `{server} released`; the detail — the project and the reason
-(`{project} · {STATUS_HINT.error|idle}`). Held for 3 s, fades for 1 s.
+The frame-wide toast stack is gone (F-69): every lifecycle moment it announced is already in the
+tab's «Logs» mode and in the DSH log, and the banners interrupted whatever the reader was doing
+in the shell. `shell.overlay` keeps one entry — the settings popup, A′. The `GET <prefix>/events`
+status channel stays: the panel's polling fallback reads it.
 
 ## 5. Texts and tokens
 
@@ -493,7 +490,6 @@ synthetic `SessionTools` remains only as a test fixture (`tests/helpers/tools.ts
 | the servers block, the rows, the refusal detail | `project.rows` (per-session rows) and the runtime's `detail` |
 | the number and tone of events in the logs disclosure | the `LogEvent` ring (200 per project, 50 in the snapshot), `sessionLogCount` |
 | the event row, the filters, "show more" | the event's fields; the ring's remainder — the `<prefix>/logs` route (the `before` cursor) |
-| the server-start toasts | the `shell.overlay` frame slot (`src/client/toasts.ts`), the source — the `GET <prefix>/events` status channel |
 | the projects table: servers / tools / pinned / mode | `project.rows`, `counts`, `policy.pins.length`, `policy.mode` |
 | the project mode form | `POST <prefix>/policy` immediately on click |
 | the request preview: `tools[] = N`, the pins, "hidden N · ≈ X tokens" | the session's visible list (`baseline` + `activated[]` + `context[]`) and `visibleChars`/`deferredChars`; no estimate when the field did not arrive |
@@ -527,8 +523,7 @@ implementation" exception became an ordinary rule over the live panel.
 **This section and the gate travel as a pair.** `scripts/design-parity.mjs` stores not a single
 colour: it names the alias token and takes its value off the live page in the run's theme
 (`TOKEN` + `tokenColor`), and the literals (the dot's 8 px, the body's `9px 10px`, the bar's
-`7px 9px`, the row density `2px 0` and `gap 6px`, the `0/12/24/36` tiers, the toast banner's
-radius and padding) are exactly what is written above. So editing §9 without editing the gate (or
+`7px 9px`, the row density `2px 0` and `gap 6px`, the `0/12/24/36` tiers) are exactly what is written above. So editing §9 without editing the gate (or
 the reverse) leaves a gate checking the old contract: change them in one pass, together with the
 surface they talk about.
 
@@ -543,7 +538,6 @@ What the gate holds on the live panel:
 | tools | the row is a disclosure button with no nested buttons, the colour and weight of a server row, the name mono, the disclosure's 12 px indent, the disclosure holds the full `mcp__<server>__<tool>`, "closed → open → closed" |
 | errors and logs | the disclosure labels in one tertiary tone, the bodies invisible before disclosure, the logs header holds this session's events, one applied chip in each filter pair, the time mono and tertiary, the message on its own line below the time, the detail with a 2 px ruler |
 | chips | the `bg-layer-3` layer plate in mono, no border; the applied filter reads by its fill |
-| toasts | the frame-layer banner: 14 px radius, `12px 16px` padding, an opaque contrast background and inverse text |
 | width | the panel works at the shell's native width and separately at 330 px with no horizontal overflow |
 
 The panel's text sizes are relative (`em` off the shell's type), so the **ratio** is compared (the

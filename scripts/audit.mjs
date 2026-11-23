@@ -970,7 +970,7 @@ function sectionI18n() {
   // fires on sentences — deliberately not a port of the shell's AST gate, which
   // discovers workspace packages only.
   const COPY_MODULES = [
-    'view.ts', 'settings.ts', 'settings-tools.ts', 'toasts.ts', 'index.ts', 'design.ts',
+    'view.ts', 'settings.ts', 'settings-tools.ts', 'index.ts', 'design.ts',
     'policy.ts', 'usage-view.ts', 'tab-locale.ts',
   ]
   const ALLOWED = [

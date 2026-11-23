@@ -42,7 +42,7 @@ The order for a newcomer: this file → `mockups/harness.html` (see it) → `con
 | Server pinning (F-44) | The server action is an expansion into names: a server row of the `hidden` tier gets one action per group (`Pin all` / `Unpin all` — following the `serverPinState` reading, like the write direction), the `pinned` tier is grouped by server and carries `Unpin all` on each server row, and on the Tools page a toggle closes the server row (all the server's names, hidden included). There is no server rule in the policy, and a server's new tool is not covered by the press — that is stated in the contract, not hidden | `contracts/policy.md` ("Pinning a whole server"), `contracts/surfaces.md` §1.5/§3.4 |
 | Indents (F-26 on top of F-09) | The `0 / 12 / 24 / 36` tier ladder: `INDENT = 12`, `STYLE.indent(level)` is the single source of the left indent | `contracts/surfaces.md` §1, `contracts/single-surface.md` |
 | The source of values | Every drawn element has a host field; there are no invented numbers (`src/client/demo.ts` was deleted in wave 4) | `contracts/surfaces.md` §8 |
-| The product's surfaces | The map of the surfaces and their boundaries: the tab, the drawer, the settings page, the editor, the toasts | `contracts/surfaces.md` |
+| The product's surfaces | The map of the surfaces and their boundaries: the tab, the drawer, the settings page, the editor | `contracts/surfaces.md` |
 | Writing and policy | The write boundaries — where and how; the project mode, the pins and the choice on a `serverName` conflict — the state and the rules | `contracts/write-path.md`, `contracts/policy.md` |
 
 ## 3. How this is checked
@@ -81,8 +81,8 @@ Two independent ways, both showing the same picture:
   location.reload()                                        // back to the product: localStorage.removeItem('dsh-project-mcp:design')
   ```
 
-  The same components are drawn (`PanelHeader`, `tabBody`, `SettingsPage`, `ProjectBlock`,
-  `ToastStack`) — only the picture's source is substituted, the host runtime is untouched. Held by
+  The same components are drawn (`PanelHeader`, `tabBody`, `SettingsPage`, `ProjectBlock`) —
+  only the picture's source is substituted, the host runtime is untouched. Held by
   `tests/design.spec.ts`: the fixtures, the registration of the three surfaces and "no flag — mode
   off".
 
@@ -95,8 +95,7 @@ scheme. The divergence is listed in the mock's own §4, and it is a work queue, 
 2. the tool name is repeated in the disclosure although it already sits in the row;
 3. surplus captions (`what the model sees`, the `tools[] = built-ins only …` line) and a refusal
    detail the banner already repeats;
-4. toasts are outside this interface project: their form lives in `src/client/toasts.ts` and has
-   not changed.
+4. the frame-wide toasts were removed (F-69): lifecycle moments stay in the «Logs» mode.
 
 The item "empty tool groups explained with words while the header counters show zeroes" was closed
 by F-37: the header counters are chips over non-empty tiers only, and an empty tier is drawn by

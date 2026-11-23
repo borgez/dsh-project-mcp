@@ -161,8 +161,8 @@ Plugin config is the `cordis.patch.yml` row (defaults shown):
     toolCallTimeoutMs: 60000
     failOnStartupError: false   # true = a dead server fails its mount instead of reconnecting
     connectTimeoutMs: 60000     # a mount with no tool after this window becomes an error row; 0 disables
-    lazy: true             # mount a session's project on its first turn, not at session creation
-    idleTimeoutMs: 300000  # release a session's mounts after this much inactivity; 0 disables
+    lazy: false            # mount a session's project when the session appears, not on its first turn
+    idleTimeoutMs: 0       # release a session's mounts after this much inactivity; 0 keeps them for the session
     activationWaitMs: 2000 # how long the first step of a turn may wait for a pending mount; 0 never waits
     profileWins: true      # a profile-level serverName wins; the project row becomes `conflict`
     watch: true            # watch project documents for edits
@@ -688,14 +688,6 @@ claiming there are none. `Clear` is a client mark in `localStorage` (`logsCleare
 there is no clear route. A page that fails to arrive is a line under the list,
 not a broken tab.
 
-Toasts are the same picture on the frame: a server that starts or stops while a
-panel is subscribed floats a banner in DSH's `shell.overlay` floating layer
-(`src/client/toasts.ts`) instead of only changing a row in a tab nobody is
-looking at. They are fed by the same status channel — `serverTransitions()` diffs
-what the `change` frames of `GET /project-mcp/events` say, and the baseline
-`hello` frame only resets it, so a page load or a reconnect never reads as twenty
-servers starting at once.
-
 ```
 browser:  ctx.inject(['slots', 'sidebarRightTabs'], s => s.sidebarRightTabs.register({ id, kind, … }))
           s.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel)
@@ -705,8 +697,8 @@ host:     ctx.webServer.register({ kind: 'prefix', path: '/project-mcp', … })
 
 Requirements: `react` in the composition. If the composition has DSH's right
 sidebar (`slots` + `sidebarRightTabs`), the tab type is registered; otherwise the
-host half keeps mounting servers and the settings page, the configuration card and
-the toasts still work. Client changes hot-reload (hard-refresh the browser);
+host half keeps mounting servers and the settings page and the configuration card
+still work. Client changes hot-reload (hard-refresh the browser);
 host changes need a `dsh web` restart.
 
 ### Settings page

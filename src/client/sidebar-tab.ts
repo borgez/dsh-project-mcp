@@ -66,7 +66,7 @@ export const TAB_MENU_ORDER = 60
 /** Registration id of the settings popup in the floating layer. */
 export const SETTINGS_DIALOG_ID = `${PACKAGE_NAME}:settings-dialog`
 
-/** Position of the popup among the layer's entries, after the toast stack. */
+/** Position of the popup among the layer's entries. */
 export const SETTINGS_DIALOG_ORDER = 61
 
 /** Identity of the type's guide entry: the box the guide page offers to open a tab. */
@@ -275,7 +275,7 @@ function useAlwaysVisible(): SidebarTabInfo {
  * body and its chip title under their keyed seats, the settings row in the chip's
  * actions menu, and the settings popup in the frame-wide floating layer. A
  * composition that lacks any of the services keeps the surfaces it has — the
- * settings page, the toasts and the host half never depend on this module.
+ * settings page and the host half never depend on this module.
  * @param services - the injected `slots` registry, the right-sidebar tab registry, and `effect`.
  * @param options - the two surfaces to draw, the interval they share, and the guide copy.
  */

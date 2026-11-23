@@ -205,7 +205,7 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     expect([...new Set(requests)]).toEqual(['react'])
   })
 
-  it('parks the tab, the settings page and the toast stack behind the services they need', () => {
+  it('parks the tab and the settings page behind the services they need', () => {
     const composition = load()
     applyBundle(composition)
 
@@ -216,16 +216,13 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     expect(composition.tabs).toHaveLength(1)
     // Each surface waits only for what it needs: the tab type and its three
     // seats for the slot registry plus the right sidebar's tab registry, the
-    // settings page for the slot registry plus the locale, the configuration
+    // settings page for the slot registry plus the locale, and the configuration
     // card (F-54) for the same pair plus `configForms` — in an inject of its
-    // own, so the settings tab never depends on it — and the toast stack for the
-    // same pair again: the locale seat is what lets a language switch repaint
-    // the banners on screen.
+    // own, so the settings tab never depends on it.
     expect(composition.injected).toEqual([
       ['slots', 'sidebarRightTabs'],
       ['slots', 'locale'],
       ['slots', 'locale', 'configForms'],
-      ['slots', 'locale'],
     ])
   })
 
@@ -233,11 +230,11 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     const composition = load({ without: ['sidebarRightTabs'] })
     applyBundle(composition)
 
-    // No tab type and no sidebar seat: the three surfaces that do not need a
-    // sidebar — the settings page, its configuration card and the toast stack —
-    // register exactly as before, and the dictionaries still land.
+    // No tab type and no sidebar seat: the surfaces that do not need a sidebar —
+    // the settings page and its configuration card — register exactly as before,
+    // and the dictionaries still land.
     expect(composition.tabs).toHaveLength(0)
-    expect(composition.registrations).toHaveLength(2)
+    expect(composition.registrations).toHaveLength(1)
     expect(composition.effects).toHaveLength(3)
     expect(composition.locale.calls.dictionaries).toHaveLength(2)
   })
@@ -252,7 +249,7 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     }).not.toThrow()
   })
 
-  it('claims one tab type, one body, one menu row, one popup and the two other surfaces', () => {
+  it('claims one tab type, one body, one menu row, one popup and the settings page', () => {
     const composition = load()
     applyBundle(composition)
 
@@ -279,7 +276,6 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
       'sidebar.right.tab.menu.item',
       'shell.overlay',
       'settings.section',
-      'shell.overlay',
     ])
     expect(composition.registrations[0]?.options).toEqual({
       name: 'sidebar.right.pane.tab',
@@ -292,7 +288,6 @@ describe.skipIf(!existsSync(bundlePath))('lib/client.js load path', () => {
     expect(composition.registrations[2]?.options).toMatchObject({ id: 'dsh-project-mcp:settings' })
     expect(composition.registrations[3]?.options).toMatchObject({ id: 'dsh-project-mcp:settings-dialog' })
     expect(composition.registrations[4]?.options).toMatchObject({ id: 'dsh-project-mcp' })
-    expect(composition.registrations[5]?.options).toMatchObject({ id: 'dsh-project-mcp:toasts' })
     expect('locale' in composition.ctx).toBe(false)
   })
 

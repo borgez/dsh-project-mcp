@@ -30,8 +30,6 @@ import type { SettingsSlotServices } from './settings.ts'
 import { localeServiceOf } from './tab-locale.ts'
 import { registerSidebarTab } from './sidebar-tab.ts'
 import type { SidebarSettingsProps, SidebarTabBodyProps, SidebarTabServices } from './sidebar-tab.ts'
-import { registerToasts } from './toasts.ts'
-import type { ToastsServices } from './toasts.ts'
 import { ProjectMcpPanel, ProjectMcpSettings, createRefreshStore } from './view.ts'
 
 /** Plugin name: matches the package name and the host half. */
@@ -143,16 +141,6 @@ export function apply(ctx: Context): void {
     // rather than failing the entry — the same rule the whole file follows.
     if (typeof forms?.get !== 'function' || typeof forms.whileServed !== 'function') return
     registerPluginConfigCard(services)
-  })
-
-  // The frame-wide toast stack, in its own inject: a composition without the
-  // sidebar still floats banners, and one without the slot registry keeps every
-  // other surface. The locale service rides along so a language switch repaints
-  // the banners on screen; `shell.overlay` is declared by the layout frame, so
-  // `registerToasts` waits for it through `slots.inject` and simply has nothing
-  // to register in a shell without a frame.
-  ctx.inject(['slots', 'locale'], (scope) => {
-    registerToasts(scope as unknown as ToastsServices)
   })
 }
 

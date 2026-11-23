@@ -6,7 +6,7 @@
  * route. When the design flag is set (see {@link DESIGN_FLAG_KEY}) `./index.ts`
  * registers *these* surfaces instead of the real ones, and every one of them
  * renders the same components the product renders — `PanelHeader`, `tabBody`,
- * `SettingsPage`, `ProjectBlock`, `ToastStack` — fed from `./design-fixtures.ts`.
+ * `SettingsPage`, `ProjectBlock` — fed from `./design-fixtures.ts`.
  *
  * What the mode is not: it is not a second UI. There is no markup here that the
  * real surfaces do not also produce; the only thing it swaps is where the
@@ -46,8 +46,6 @@ import { DEFAULT_SETTINGS_PAGE } from './settings-tools.ts'
 import type { SettingsPageKey } from './settings-tools.ts'
 import { localeServiceOf, tabTranslate, useTabTranslate } from './tab-locale.ts'
 import type { TabLocale } from './tab-locale.ts'
-import { TOASTS_ID, TOASTS_ORDER, TOASTS_SLOT, ToastStack, createToastStore } from './toasts.ts'
-import type { ToastsServices } from './toasts.ts'
 import {
   PanelHeader,
   ProjectBlock,
@@ -63,7 +61,6 @@ import {
 } from './view.ts'
 import type { PanelStorage, Translate } from './view.ts'
 import {
-  DESIGN_TOASTS,
   designPicture,
   designPolicy,
   designProject,
@@ -327,43 +324,12 @@ export function LocalizedDesignPopup(props: SidebarSettingsProps & { variant?: D
 
 
 /**
- * The frame-wide toast stack, repeating its three fixture banners.
- *
- * The product's stack reads a status channel; here the store is filled directly
- * from {@link DESIGN_TOASTS} and refilled on a timer, because a banner lives
- * three seconds and a design surface has to still be on screen when someone
- * looks at it.
- * @param services - the injected `slots` service, and the locale seat.
- */
-export function registerDesignToasts(services: ToastsServices): void {
-  const store = createToastStore()
-  services.slots.inject(TOASTS_SLOT, () => {
-    const entry = services.slots.register(
-      { name: TOASTS_SLOT, id: TOASTS_ID, order: TOASTS_ORDER },
-      () => h(ToastStack, { store, locale: services.locale }),
-    )
-    let index = 0
-    const push = (): void => {
-      const draft = DESIGN_TOASTS[index % DESIGN_TOASTS.length]
-      index += 1
-      if (draft !== undefined) store.push(draft)
-    }
-    push()
-    const timer = setInterval(push, DESIGN_TOAST_ROTATE_MS)
-    return () => {
-      clearInterval(timer)
-      entry()
-    }
-  })
-}
-
-/**
  * Register the fixture surfaces on the browser half.
  *
  * Mirrors `apply`'s own wiring exactly — the tab behind the right sidebar's
- * settings page behind `slots` + `locale`, the toasts behind `slots` alone — so
- * the design mode is a drop-in replacement for the real one and a composition
- * missing a service behaves the same way in both.
+ * settings page behind `slots` + `locale` — so the design mode is a drop-in
+ * replacement for the real one and a composition missing a service behaves the
+ * same way in both.
  * @param ctx - client root context.
  * @param variant - the picture to draw; read from the flag when omitted.
  */
@@ -415,9 +381,5 @@ export function registerDesignSurfaces(
     registerSettingsTab(services, (props: SettingsTabProps) =>
       h(DesignSettingsTab, { variant, t: props.t, hostT: props.hostT }),
     )
-  })
-
-  ctx.inject(['slots', 'locale'], (scope) => {
-    registerDesignToasts(scope as unknown as ToastsServices)
   })
 }

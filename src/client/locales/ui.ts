@@ -254,12 +254,6 @@ export const zh: Record<UiKey, string> = {
   summaryConflict: '{count} 个冲突',
   summaryNone: '无声明',
   close: '关闭',
-  // The frame-wide toasts (F-47): one keyed line per lifecycle moment, and the
-  // quieter line weaving the project around the fact behind it.
-  toastUp: '{server} 已启动',
-  toastFailed: '{server} 失败',
-  toastReleased: '{server} 已释放',
-  toastDetail: '{project} · {detail}',
   // The poll interval's row in the tab's settings panel.
   refreshTitle: '刷新间隔',
   refreshDesc: '面板重新读取宿主快照的频率',
@@ -674,12 +668,6 @@ export const ru: Record<UiKey, string> = {
   summaryConflict: '{count} в конфликте',
   summaryNone: 'ничего не объявлено',
   close: 'Закрыть',
-  // The frame-wide toasts (F-47): one keyed line per lifecycle moment, and the
-  // quieter line weaving the project around the fact behind it.
-  toastUp: '{server} поднят',
-  toastFailed: '{server}: сбой',
-  toastReleased: '{server} освобождён',
-  toastDetail: '{project} · {detail}',
   // The poll interval's row in the tab's settings panel.
   refreshTitle: 'Интервал обновления',
   refreshDesc: 'Как часто панель перечитывает снимок хоста',

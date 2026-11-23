@@ -58,7 +58,7 @@ export const en = {
   toolsHidden: 'hidden',
   toolsNotMounted: 'Nothing to hide yet',
   toolsNotMountedHint:
-    'lazy mounting: the project’s servers come up on the session’s first step, so the catalog is empty until then',
+    'the project’s servers are starting; the catalog fills in as they publish their tools',
   toolsNotMountedCode: 'tools[] = built-ins only · mcp__* not registered yet',
   // The declared servers of this session, on the tools block: the reason an
   // apparently empty catalog is empty.
@@ -251,14 +251,6 @@ export const en = {
   summaryConflict: '{count} conflict',
   summaryNone: 'nothing declared',
   close: 'Close',
-  // The frame-wide toasts (F-47): drafts carry these keys, and the stack
-  // resolves them at render, so a language switch repaints the banners on
-  // screen. The quieter line weaves the project around the fact behind the
-  // moment — the host's own detail sentence, or a status hint.
-  toastUp: '{server} is up',
-  toastFailed: '{server} failed',
-  toastReleased: '{server} released',
-  toastDetail: '{project} · {detail}',
   // The poll interval's row in the settings panel, read live through the seat
   // on every render.
   refreshTitle: 'Refresh interval',
@@ -347,8 +339,8 @@ export const STATUS_KEYS: Record<ServerStatus, LocaleKey> = {
 /**
  * The dictionary key of each status's one-line explanation, so the panel needs
  * no legend. Readers translate through their own seat —
- * `t(STATUS_HINT[row.status])` — which keeps the sentence the tooltip or the
- * toast shows in the reader's language.
+ * `t(STATUS_HINT[row.status])` — which keeps the sentence the tooltip shows
+ * in the reader's language.
  */
 export const STATUS_HINT: Record<ServerStatus, LocaleKey> = {
   active: 'statusHintActive',
@@ -1102,8 +1094,8 @@ export function storedRefreshMs(storage: PanelStorage | undefined = browserStora
  *
  * Two surfaces read it — the panel it paces and the settings that change it —
  * and they are not in one tree (the settings live in the tab's actions menu), so
- * the value needs a seat both can subscribe to. The store is the same shape the
- * toast stack uses: a value, a setter, and listeners for whoever renders it.
+ * the value needs a seat both can subscribe to. The store is a plain subscription store:
+ * a value, a setter, and listeners for whoever renders it.
  * Writes go to browser storage first, so a reload keeps the interval even when
  * no surface is left to re-render.
  */

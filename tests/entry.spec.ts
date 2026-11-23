@@ -197,7 +197,7 @@ describe('project-mcp entry identity', () => {
     const resolved = resolveConfig({})
     expect(resolved.localFiles).toEqual(['.dsh/mcp.json'])
     expect(resolved.globalFiles).toEqual([])
-    expect(resolved.lazy).toBe(true)
+    expect(resolved.lazy).toBe(false)
     expect(resolved.profileWins).toBe(true)
     expect(resolved.watch).toBe(true)
     expect(resolved.allowGlobalWrite).toBe(false)
@@ -248,7 +248,7 @@ describe('project-mcp entry identity', () => {
     expect(parsed.inputs).toEqual({})
     // A volatile field parses to the host's ref shape: the default lives
     // behind the ref's `get()`, and `resolveConfig` unwraps it the same way.
-    expect(liveValue(parsed.lazy)).toBe(true)
+    expect(liveValue(parsed.lazy)).toBe(false)
     // The defaults the schema hands the loader resolve to the same config.
     expect(resolveConfig(parsed)).toMatchObject({
       localFiles: ['.dsh/mcp.json'],

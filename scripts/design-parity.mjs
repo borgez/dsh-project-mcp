@@ -39,7 +39,7 @@
  * of the host's own shape (the same `{ ok, value }` envelope, the same
  * `McpSnapshot`) so every state the contract names is on screen at once: all
  * four status tokens, the quiet rows, a failure with its detail, a ring with
- * events, and a status channel that raises a toast. The panel is still the
+ * events. The panel is still the
  * product — same bundle, same theme, same DOM — only the host is replaced, and
  * the script says so in the profile line it prints.
  *
@@ -693,7 +693,7 @@ const FIXTURE_SCRIPT = `(function () {
     }
     return realFetch(input, init)
   }
-  // The status channel, as the toast stack reads it: a baseline, then a real
+  // The status channel: a baseline, then a real
   // lifecycle flip every few seconds so a banner is on screen while the harness
   // looks for one.
   function ParitySource() {
@@ -1477,23 +1477,6 @@ const LIVE_SURFACE_PROBE = `JSON.stringify((function () {
   }
 })())`
 
-/** The toast banner, when one is on screen. The stack is a frame-wide layer. */
-const TOAST_PROBE = `JSON.stringify((function () {
-  ${HELPERS}
-  const banners = all(document.body, 'div').filter(function (el) {
-    const s = getComputedStyle(el)
-    return s.borderRadius === '14px' && s.backgroundColor !== 'rgba(0, 0, 0, 0)'
-  })
-  if (banners.length === 0) return { found: false }
-  const stack = banners[0].parentElement
-  return {
-    found: true,
-    stack: sample(stack),
-    banner: sample(banners[0]),
-    dot: sample([...banners[0].children].find(isDot) || null),
-    text: textOf(banners[0]).slice(0, 80),
-  }
-})())`
 
 /** Force the panel to a known width, so the narrow-shell claim is measured. */
 const WIDTH_PROBE = `JSON.stringify((function () {
@@ -1697,19 +1680,16 @@ function relation({ surface, title, liveA, liveB, property, authority }) {
 
 const SURFACE_A = 'A · the sidebar tab'
 const SURFACE_D = 'D · the logs disclosure'
-const SURFACE_T = 'T · toasts (the frame layer)'
-
 /**
  * Build the verdict from the live capture.
  * @param live - the live panel capture: the one surface in its default state
  *   (both disclosures folded), the tool row's own open and closed readings, the
  *   tail disclosures unfolded for the log rows, and the values of the alias
  *   tokens the contract freezes, resolved in the theme this run is in.
- * @param toast - the toast banner, when one was on screen during the run.
  * @param narrow - the same panel forced to the contract's own 330px.
  * @returns the number of FAILing rows.
  */
-function verdict(live, toast, narrow) {
+function verdict(live, narrow) {
   const firstRow = live.rows[0] ?? null
   const tokens = live.tokens ?? {}
 
@@ -2355,44 +2335,6 @@ function verdict(live, toast, narrow) {
     authority: `${CONTRACT_DOC} §9 — "one applied chip in each filter pair"`,
   })
 
-  /* ── the frame-wide toast ──────────────────────────────────────────────── */
-  contract({
-    surface: SURFACE_T,
-    title: 'the toast rose and landed in the frame layer',
-    holds: toast?.found === true && toast.stack !== null,
-    expected: 'the banner in `shell.overlay`',
-    live: toast?.found === true ? `«${toast.text}»` : 'not caught',
-    authority: `${CONTRACT_DOC} §4 — "Surface T — toasts": the frame-layer shell.overlay slot`,
-    note: 'the banner is the shell’s floating layer, drawn outside the panel; caught from the transition the harness provoked with `Sync`',
-  })
-  if (toast?.found === true) {
-    expectRule({
-      surface: SURFACE_T,
-      title: 'the toast banner — the shell radius',
-      live: toast.banner,
-      expected: '14px',
-      property: 'borderRadius',
-      authority: 'src/client/toasts.ts — the stock DSH Toast geometry',
-    })
-    expectRule({
-      surface: SURFACE_T,
-      title: 'the toast banner — the shell padding',
-      live: toast.banner,
-      expected: '12px 16px',
-      property: 'padding',
-      authority: 'src/client/toasts.ts — the stock DSH Toast geometry',
-    })
-    contract({
-      surface: SURFACE_T,
-      title: 'the toast banner — a contrast-layer background and inverse text',
-      holds:
-        toast.banner.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
-        toast.banner.color !== toast.banner.backgroundColor,
-      expected: 'an opaque background + readable text',
-      live: `${toast.banner.backgroundColor} · ${toast.banner.color}`,
-      authority: 'src/client/toasts.ts — `--dsw-alias-button-contrast-fill` / `-label-primary-inverted`',
-    })
-  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2525,22 +2467,17 @@ async function main() {
 
     // The errors and the logs disclosure are the contract's last two blocks, and
     // both open folded (`LogsView` reads its own filters once its body mounts).
-    // Opening them puts the ring's rows and the failure's body on screen; the
-    // fixture's status channel is raising a banner while that settles, and that
-    // banner is the toast the last checks read.
+    // Opening them puts the ring's rows and the failure's body on screen.
     const blockPress = await openTailBlocks(app.page)
     // The server press of F-44 sits in the tools block's folded `hidden` tier:
     // unfold it for the tail reading, fold it back before the width probe.
     await foldHiddenTier(app.page, true)
     await sleep(SETTLE_MS)
-    let toast = { found: false }
     let tail = { found: false, logRows: [] }
     for (let attempt = 0; attempt < 40; attempt++) {
       await sleep(400)
-      const seen = await app.page.json(TOAST_PROBE)
-      if (seen.found === true) toast = seen
       tail = await app.page.json(LIVE_SURFACE_PROBE)
-      if ((tail.logRows?.length ?? 0) > 0 && toast.found === true) break
+      if ((tail.logRows?.length ?? 0) > 0) break
     }
 
     await foldHiddenTier(app.page, false)
@@ -2572,14 +2509,14 @@ async function main() {
     }
 
     if (DUMP) {
-      if (JSON_OUT !== undefined) writeFileSync(JSON_OUT, JSON.stringify({ live, narrow, toast }, null, 2))
-      console.log(JSON.stringify({ live, narrow, toast }, null, 2))
+      if (JSON_OUT !== undefined) writeFileSync(JSON_OUT, JSON.stringify({ live, narrow }, null, 2))
+      console.log(JSON.stringify({ live, narrow }, null, 2))
       return 0
     }
     if (live.found !== true) fail('design-parity: the plugin’s tab panel is not on the page', 1)
 
-    verdict(live, toast, narrow)
-    if (JSON_OUT !== undefined) writeFileSync(JSON_OUT, JSON.stringify({ live, narrow, toast, results }, null, 2))
+    verdict(live, narrow)
+    if (JSON_OUT !== undefined) writeFileSync(JSON_OUT, JSON.stringify({ live, narrow, results }, null, 2))
     return report()
   } finally {
     app?.stop()

@@ -387,7 +387,7 @@ describe('ToolsView', () => {
     const rendered = texts(view()).join(' | ')
 
     expect(rendered).toContain(t('toolsNotMounted'))
-    expect(rendered).toContain('lazy mounting')
+    expect(rendered).toContain('the project’s servers are starting')
     expect(rendered).toContain('tools[] = built-ins only')
     expect(rendered).not.toContain('0 pinned')
     expect(rendered).not.toContain('chars of')

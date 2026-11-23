@@ -2,12 +2,12 @@
  * Entry wiring of the browser half (`src/client/index.ts`).
  *
  * Every other client test drives one surface — the panel, the settings popup,
- * the settings page, the toast stack — but nothing checked that **this** module
+ * the settings page — but nothing checked that **this** module
  * composes them the way the shell calls it: one tab *type* of DSH's own right
  * sidebar with its body under the keyed seat, one settings row in the tab chip's
  * actions menu with the popup it opens in the frame-wide floating layer, one page
- * through `slots` + `locale` behind its own `ctx.inject`, and one toast stack
- * behind the slot registry alone. That wiring is what registers the surfaces, so
+ * through `slots` + `locale` behind its own `ctx.inject`. That wiring is what
+ * registers the surfaces, so
  * it is driven here against a fake client context whose `ctx.inject` mirrors
  * Cordis: a callback runs at once when every service it names is provided, and is
  * parked until then when one is missing — so both a settled composition and a
@@ -26,7 +26,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { LocalizedPanel, LocalizedSettings, apply, inject, name } from '../src/client/index.ts'
 import { NS, SETTINGS_SLOT } from '../src/client/settings.ts'
 import { NS_HOST } from '../src/client/locales/host.ts'
-import { TOASTS_ID, TOASTS_ORDER, TOASTS_SLOT } from '../src/client/toasts.ts'
 import {
   DEFAULT_REFRESH_MS,
   ProjectMcpPanel,
@@ -86,8 +85,8 @@ interface SeatElement<P> {
  * Options a registration carries, as this file records them.
  *
  * The keyed tab body names a `key`; the settings page adds a `locale` and an
- * `inject` face; the two list entries claim an `id` and an `order`, which the
- * toast stack and the actions-menu row both declare.
+ * `inject` face; the actions-menu row and the popup claim an `id` and an
+ * `order`.
  */
 interface RecordedRegistration {
   name: string
@@ -357,20 +356,18 @@ describe('the plugin identity the entry publishes', () => {
 })
 
 describe('apply against a settled composition', () => {
-  it('registers the tab type, the settings page and the toast stack exactly once', () => {
+  it('registers the tab type and the settings page exactly once', () => {
     const composition = activate({ locale: localeService({ ru: RU }).service })
 
     // Each surface sits behind the services it needs, and behind no other: the
-    // tab is a type of the right sidebar's registry plus four slot seats, while
-    // the toast stack asks for the slot registry and the locale seat, so a
-    // language switch repaints the banners on screen. The plugin's configuration
-    // card (F-54) adds the third list — `configForms` — in an inject of its own,
-    // so the settings tab never depends on it.
+    // tab is a type of the right sidebar's registry plus four slot seats, and
+    // the settings page rides `slots` + `locale`. The plugin's configuration
+    // card (F-54) adds the second list — `configForms` — in an inject of its
+    // own, so the settings tab never depends on it.
     expect(composition.recorded.injects).toEqual([
       ['slots', 'sidebarRightTabs'],
       ['slots', 'locale'],
       ['slots', 'locale', 'configForms'],
-      ['slots', 'locale'],
     ])
     expect(composition.recorded.tabs).toHaveLength(1)
     expect(composition.recorded.slotInjects).toEqual([
@@ -379,7 +376,6 @@ describe('apply against a settled composition', () => {
       TAB_MENU_SLOT,
       SETTINGS_DIALOG_SLOT,
       SETTINGS_SLOT,
-      TOASTS_SLOT,
     ])
     expect(composition.recorded.registrations.map((registration) => registration.name)).toEqual([
       TAB_SLOT,
@@ -387,41 +383,22 @@ describe('apply against a settled composition', () => {
       TAB_MENU_SLOT,
       SETTINGS_DIALOG_SLOT,
       SETTINGS_SLOT,
-      TOASTS_SLOT,
     ])
-    expect(composition.recorded.components).toHaveLength(6)
+    expect(composition.recorded.components).toHaveLength(5)
     expect(composition.recorded.components.every((component) => typeof component === 'function')).toBe(true)
   })
 
-  it('claims the frame-wide floating layer twice: the settings popup and the toast stack', () => {
+  it('claims the frame-wide floating layer for the settings popup alone', () => {
     const composition = activate({ locale: localeService({ ru: RU }).service })
 
     expect(SETTINGS_DIALOG_SLOT).toBe('shell.overlay')
-    expect(TOASTS_SLOT).toBe('shell.overlay')
     expect(composition.recorded.registrations[DIALOG_INDEX]).toEqual({
       name: SETTINGS_DIALOG_SLOT,
       id: SETTINGS_DIALOG_ID,
       order: SETTINGS_DIALOG_ORDER,
     })
-    expect(composition.recorded.registrations[5]).toEqual({
-      name: TOASTS_SLOT,
-      id: TOASTS_ID,
-      order: TOASTS_ORDER,
-    })
-    // The popup's cell comes after the stack's, so the card paints over a banner
-    // rather than under one — the layer stacks in registration order.
-    expect(SETTINGS_DIALOG_ORDER).toBeGreaterThan(TOASTS_ORDER)
   })
 
-  it('floats the toast stack even when the shell has no locale service', () => {
-    const composition = activate()
-
-    // The stack's own copy is the module's English, so it does not ride the
-    // settings page's locale seat: with no locale service in the composition,
-    // the stack still registers and only the tab's translate seat is bare.
-    expect(composition.recorded.slotInjects).toContain(TOASTS_SLOT)
-    expect(composition.recorded.registrations.map((registration) => registration.id)).toContain(TOASTS_ID)
-  })
 
   it('registers all three languages in one call per namespace, and names Russian to the shell', () => {
     const composition = activate()

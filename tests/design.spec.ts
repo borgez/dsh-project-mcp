@@ -26,7 +26,6 @@ import {
   designModeEnabled,
   designVariantOf,
   registerDesignSurfaces,
-  registerDesignToasts,
 } from '../src/client/design.ts'
 import {
   SETTINGS_DIALOG_SLOT,
@@ -46,7 +45,6 @@ import {
   DESIGN_PENDING_EVENT,
   DESIGN_PROJECT_ROOT,
   DESIGN_SESSION,
-  DESIGN_TOASTS,
   DESIGN_VARIANTS,
   designPicture,
   designPolicy,
@@ -58,7 +56,6 @@ import {
 import { apply } from '../src/client/index.ts'
 import { NS, SETTINGS_SLOT, SettingsPage } from '../src/client/settings.ts'
 import { NS_HOST } from '../src/client/locales/host.ts'
-import { TOASTS_ID, TOASTS_ORDER, TOASTS_SLOT, ToastStack } from '../src/client/toasts.ts'
 import { ProjectBlock, STATUS_COLOR, sessionBreakdown, statusGroups } from '../src/client/view.ts'
 import { TAB_ID } from '../src/shared.ts'
 import { localeService } from './helpers/locale.ts'
@@ -357,18 +354,6 @@ describe('design fixtures', () => {
     expect(designTools('empty')).toBeUndefined()
   })
 
-  it('names three banners, one per lifecycle moment worth announcing', () => {
-    expect(DESIGN_TOASTS.map((toast) => toast.level)).toEqual(['up', 'error', 'released'])
-    // Keyed drafts, as the real transition diff writes them: the stack
-    // resolves the keys at render, so the stand follows the shell's language.
-    expect(DESIGN_TOASTS.map((toast) => toast.textKey)).toEqual([
-      'toastUp',
-      'toastFailed',
-      'toastReleased',
-    ])
-    for (const toast of DESIGN_TOASTS) expect(toast.detail ?? toast.detailKey).toBeTruthy()
-    expect(new Set(DESIGN_TOASTS.map((toast) => toast.level)).size).toBe(3)
-  })
 })
 
 /** `true` when a picture's project exists but declares nothing. */
@@ -495,14 +480,12 @@ describe('registerDesignSurfaces', () => {
     const { ctx, recorded } = fakeComposition()
     registerDesignSurfaces(ctx, 'full')
 
-    expect(recorded.injects).toEqual([['slots', 'sidebarRightTabs'], ['slots', 'locale'], ['slots', 'locale']])
     expect(recorded.slotInjects).toEqual([
       TAB_SLOT,
       TAB_TITLE_SLOT,
       TAB_MENU_SLOT,
       SETTINGS_DIALOG_SLOT,
       SETTINGS_SLOT,
-      TOASTS_SLOT,
     ])
     expect(recorded.namespaces).toEqual([NS, NS_HOST])
     // The fixture surfaces register the same one call per namespace with all
@@ -580,11 +563,6 @@ describe('registerDesignSurfaces', () => {
     expect(recorded.registrations.find((entry) => entry.name === SETTINGS_SLOT)).toMatchObject({
       id: 'dsh-project-mcp',
     })
-    // By id, not by slot: the popup and the stack share `shell.overlay`.
-    expect(recorded.registrations.find((entry) => entry.id === TOASTS_ID)).toMatchObject({
-      name: TOASTS_SLOT,
-      order: TOASTS_ORDER,
-    })
     expect(recorded.registrations.find((entry) => entry.name === TAB_SLOT)).toMatchObject({ key: TAB_ID })
   })
 
@@ -597,65 +575,6 @@ describe('registerDesignSurfaces', () => {
     } finally {
       restore()
     }
-  })
-})
-
-describe('registerDesignToasts', () => {
-  it('fills the store at once and keeps repeating the three banners', () => {
-    vi.useFakeTimers()
-    const injections: (() => unknown)[] = []
-    let stack: (() => unknown) | undefined
-    const services = {
-      slots: {
-        inject: (_slot: string, callback: () => unknown) => {
-          injections.push(callback)
-          callback()
-          return () => undefined
-        },
-        register: (_options: { name: string; id: string; order: number }, component: unknown) => {
-          stack = component as () => unknown
-          return () => undefined
-        },
-      },
-    }
-    registerDesignToasts(services)
-    expect(injections).toHaveLength(1)
-    const element = stack?.() as Element
-    expect(element.type).toBe(ToastStack)
-    const store = element.props.store as { getSnapshot(): readonly unknown[] }
-    expect(store.getSnapshot()).toHaveLength(1)
-    vi.advanceTimersByTime(2_500)
-    vi.advanceTimersByTime(2_500)
-    // Three kept at once: the older ones drop off the tail, as MAX_TOASTS says.
-    expect(store.getSnapshot()).toHaveLength(3)
-    vi.advanceTimersByTime(2_500)
-    expect(store.getSnapshot()).toHaveLength(3)
-  })
-
-  it('stops the rotation when the slot registration is torn down', () => {
-    vi.useFakeTimers()
-    let dispose: (() => unknown) | undefined
-    let stack: (() => unknown) | undefined
-    const services = {
-      slots: {
-        inject: (_slot: string, callback: () => unknown) => {
-          // A settled composition runs the callback and keeps what it returns;
-          // that return value is the disposer under test.
-          dispose = callback() as () => unknown
-          return () => undefined
-        },
-        register: (_options: { name: string; id: string; order: number }, component: unknown) => {
-          stack = component as () => unknown
-          return () => undefined
-        },
-      },
-    }
-    registerDesignToasts(services)
-    const store = (stack?.() as Element).props.store as { getSnapshot(): readonly unknown[] }
-    expect(typeof dispose).toBe('function')
-    ;(dispose as () => unknown)()
-    vi.advanceTimersByTime(10_000)
-    expect(store.getSnapshot()).toHaveLength(1)
   })
 })
 
